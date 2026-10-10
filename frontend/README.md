@@ -10,29 +10,45 @@ Open `dist/index.html` in a browser, or serve `dist/` with any static HTTP serve
 
 - Step, play, pause, reset, and switch between vulnerable and protected scenarios.
 - Live Wait-For Graph, timeline, risk trend, contention heatmap, and metrics.
-- Side-by-side outcome comparison and CSV export of demonstration events.
+- Import validated trial JSON, replay its events, and restore the built-in demo.
+- Side-by-side outcome comparison and CSV export derived from current trial data.
 - Responsive desktop and mobile layouts.
 
-The scenarios are deterministic **demo data generated in the browser**. This frontend does not yet run real threads or connect to the experiment backend.
+The built-in scenarios are deterministic **demo data generated in the browser**. Imported trial JSON can display backend results, but this frontend does not itself run real threads or call a backend API yet.
 
 ## Backend handoff
 
-The future backend should run real threads in isolated trials and stream events to this interface. A suggested event shape is:
+The future backend should run real threads in isolated trials and produce one versioned JSON file per trial. The frontend now has a validated importer, so the team can connect backend results without replacing the dashboard components. See [the trial contract](contract/README.md), [schema](contract/trial-v1.schema.json), and two example files.
 
 ```json
 {
+  "schema_version": 1,
   "run_id": "trial-001",
   "mode": "vulnerable",
-  "timestamp_ms": 600,
-  "thread_id": "T1",
-  "action": "wait",
-  "resource_id": "B",
-  "owner_thread_id": "T2",
-  "wait_duration_ms": 200
+  "status": "deadlock",
+  "events": [
+    {
+      "timestamp_ms": 600,
+      "thread_id": "T1",
+      "action": "wait",
+      "resource_id": "B",
+      "owners": { "A": "T1", "B": "T2" },
+      "waits": { "T1": "B" },
+      "risk_score": 72,
+      "wait_duration_ms": 200,
+      "contention_count": 2
+    }
+  ]
 }
 ```
 
-Use actions `request`, `acquire`, `wait`, `release`, `warning`, `deadlock_detected`, and `complete`. Include a run summary with deadlock status, warning time, cycle detection time, completion time, and thread throughput. The UI's `app.js` currently contains snapshot arrays; replace those arrays with backend-derived state while retaining the render functions.
+The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend can write JSON and users can import it, or a future API client can fetch the same object and call `window.DeadlockLab.loadTrial(trial)`. The UI derives graph edges and comparison metrics from imported snapshots.
+
+Run the contract checks with:
+
+```sh
+node --test tests/trial-data.test.js
+```
 
 ## Team sequence
 
