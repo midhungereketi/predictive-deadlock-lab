@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/midhungereketi/predictive-deadlock-lab/blob/main/frontend/contract/trial-v1.schema.json",
+  "title": "Predictive Deadlock Lab trial",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "mode", "status", "events"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "mode": { "enum": ["vulnerable", "protected"] },
+    "status": { "enum": ["deadlock", "completed"] },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timestamp_ms", "thread_id", "action", "owners", "waits", "risk_score", "wait_duration_ms", "contention_count"],
+        "properties": {
+          "timestamp_ms": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+          "thread_id": { "enum": ["T1", "T2", "system"] },
+          "action": { "enum": ["start", "request", "acquire", "wait", "release", "warning", "policy_applied", "deadlock_detected", "complete"] },
+          "resource_id": { "enum": ["A", "B", null] },
+          "owners": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "A": { "enum": ["T1", "T2"] }, "B": { "enum": ["T1", "T2"] } }
+          },
+          "waits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "T1": { "enum": ["A", "B"] }, "T2": { "enum": ["A", "B"] } }
+          },
+          "risk_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "wait_duration_ms": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+          "contention_count": { "type": "integer", "minimum": 0, "maximum": 100000 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "detail": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    }
+  }
+}
+
