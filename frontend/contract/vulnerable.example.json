@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "run_id": "example-vulnerable-001",
+  "mode": "vulnerable",
+  "status": "deadlock",
+  "events": [
+    { "timestamp_ms": 0, "thread_id": "system", "action": "start", "owners": {}, "waits": {}, "risk_score": 8, "wait_duration_ms": 0, "contention_count": 0 },
+    { "timestamp_ms": 200, "thread_id": "T1", "action": "acquire", "resource_id": "A", "owners": { "A": "T1" }, "waits": {}, "risk_score": 14, "wait_duration_ms": 0, "contention_count": 0 },
+    { "timestamp_ms": 400, "thread_id": "T2", "action": "acquire", "resource_id": "B", "owners": { "A": "T1", "B": "T2" }, "waits": {}, "risk_score": 35, "wait_duration_ms": 0, "contention_count": 1 },
+    { "timestamp_ms": 600, "thread_id": "T1", "action": "wait", "resource_id": "B", "owners": { "A": "T1", "B": "T2" }, "waits": { "T1": "B" }, "risk_score": 72, "wait_duration_ms": 200, "contention_count": 2 },
+    { "timestamp_ms": 1000, "thread_id": "system", "action": "deadlock_detected", "owners": { "A": "T1", "B": "T2" }, "waits": { "T1": "B", "T2": "A" }, "risk_score": 96, "wait_duration_ms": 600, "contention_count": 4 }
+  ]
+}
+
