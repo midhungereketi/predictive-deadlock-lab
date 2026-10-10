@@ -1,5 +1,5 @@
 /* Browser demonstration only. Replace these snapshots with timestamped backend events later. */
-const scenarios = {
+const demoScenarios = {
   vulnerable: [
     { ms: 0, title: "Ready to run", detail: "Select Run or advance one step.", kind: "neutral", owners: {}, waits: {}, score: 8, waitMs: 0, heat: 0, t1: "IDLE", t2: "IDLE", explanation: "An edge appears when one thread waits for a lock held by another." },
     { ms: 200, title: "T1 acquires lock A", detail: "T1 starts its A → B path.", kind: "normal", owners: { A: "T1" }, waits: {}, score: 14, waitMs: 0, heat: 0, t1: "HOLDS A", t2: "IDLE", explanation: "T1 owns A; no thread is blocked yet." },
@@ -17,6 +17,11 @@ const scenarios = {
     { ms: 1000, title: "T2 acquires A, then B", detail: "T2 enters its critical section.", kind: "safe", owners: { A: "T2", B: "T2" }, waits: {}, score: 16, waitMs: 400, heat: 1, t1: "COMPLETE", t2: "HOLDS A+B", explanation: "T2 proceeds in the same A → B order." },
     { ms: 1200, title: "Both threads complete", detail: "T2 releases all locks. No deadlock occurred.", kind: "safe", owners: {}, waits: {}, score: 6, waitMs: 400, heat: 1, t1: "COMPLETE", t2: "COMPLETE", explanation: "Both threads finished. A common lock order prevented circular wait in this scenario." }
   ]
+};
+const scenarios = { vulnerable: demoScenarios.vulnerable, protected: demoScenarios.protected };
+const trialMeta = {
+  vulnerable: { source: "demo", runId: "demo-vulnerable", status: "deadlock" },
+  protected: { source: "demo", runId: "demo-protected", status: "completed" }
 };
 
 const els = {
@@ -57,7 +62,13 @@ const els = {
   analysisT2Path: document.getElementById("analysis-t2-path"),
   analysisOrderNote: document.getElementById("analysis-order-note"),
   compareEmpty: document.getElementById("compare-empty"),
-  compareResults: document.getElementById("compare-results")
+  compareResults: document.getElementById("compare-results"),
+  sourceBadge: document.getElementById("source-badge"),
+  sourceLabel: document.getElementById("data-source-label"),
+  sourceDetail: document.getElementById("data-source-detail"),
+  restoreButton: document.getElementById("restore-button"),
+  importFeedback: document.getElementById("import-feedback"),
+  trialFile: document.getElementById("trial-file")
 };
 
 let mode = "vulnerable";
@@ -68,12 +79,16 @@ let completed = { vulnerable: false, protected: false };
 function sequence() { return scenarios[mode]; }
 function current() { return sequence()[step]; }
 function stopPlayback() { if (timer !== null) { window.clearInterval(timer); timer = null; } }
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+}
 
 function setMode(next) {
   if (next === mode) return;
   stopPlayback();
   mode = next;
   step = 0;
+  els.importFeedback.hidden = true;
   document.querySelectorAll("[data-mode]").forEach(button => {
     const selected = button.dataset.mode === mode;
     button.classList.toggle("is-selected", selected);
@@ -123,8 +138,8 @@ function renderControls() {
 function renderMetrics(frame) {
   const blocked = Object.keys(frame.waits).length;
   const done = step === sequence().length - 1;
-  const deadlock = mode === "vulnerable" && done;
-  const safe = mode === "protected" && done;
+  const deadlock = trialMeta[mode].status === "deadlock" && done;
+  const safe = trialMeta[mode].status === "completed" && done;
   const warning = frame.score >= 70 && !deadlock;
   els.score.textContent = String(frame.score).padStart(2, "0");
   els.blocked.textContent = String(blocked);
@@ -137,19 +152,21 @@ function renderMetrics(frame) {
 }
 
 function renderGraph(frame) {
-  const edge1 = frame.waits.T1 === "B" && frame.owners.B === "T2";
-  const edge2 = frame.waits.T2 === "A" && frame.owners.A === "T1";
-  const cycle = edge1 && edge2;
+  const edge1 = Boolean(frame.waits.T1 && frame.owners[frame.waits.T1] === "T2");
+  const edge2 = Boolean(frame.waits.T2 && frame.owners[frame.waits.T2] === "T1");
+  const cycle = DeadlockTrialData.hasCycle(frame);
   for (const [element, visible] of [[els.edge1, edge1], [els.edge2, edge2], [els.edgeLabel1, edge1], [els.edgeLabel2, edge2]]) {
     element.classList.toggle("is-visible", visible);
     element.classList.toggle("is-danger", cycle);
   }
   els.ownerA.textContent = frame.owners.A || "FREE";
   els.ownerB.textContent = frame.owners.B || "FREE";
+  els.edgeLabel1.textContent = "waits for " + (frame.waits.T1 || "lock");
+  els.edgeLabel2.textContent = "waits for " + (frame.waits.T2 || "lock");
   els.t1Sub.textContent = frame.t1;
   els.t2Sub.textContent = frame.t2;
   els.graphSummary.textContent = frame.explanation;
-  els.graphBadge.textContent = cycle ? "CYCLE CONFIRMED" : edge1 || edge2 ? "1 WAIT EDGE" : "NO WAIT EDGES";
+  els.graphBadge.textContent = cycle ? "CYCLE CONFIRMED" : edge1 && edge2 ? "2 WAIT EDGES" : edge1 || edge2 ? "1 WAIT EDGE" : "NO WAIT EDGES";
   els.graphBadge.className = "outline-badge" + (cycle ? " is-danger" : edge1 || edge2 ? " is-warning" : mode === "protected" && step === sequence().length - 1 ? " is-safe" : "");
 }
 
@@ -162,10 +179,10 @@ function renderTimeline() {
   }
   els.timeline.innerHTML = sequence().slice(1, step + 1).map(event => {
     const symbol = event.kind === "danger" ? "×" : event.kind === "warning" ? "!" : event.kind === "safe" ? "✓" : "•";
-    return '<div class="event is-' + event.kind + '"><span class="event-time">' + String(event.ms).padStart(4, "0") + 'ms</span><span class="event-symbol">' + symbol + '</span><div class="event-copy"><strong>' + event.title + '</strong><span>' + event.detail + '</span></div></div>';
+    return '<div class="event is-' + event.kind + '"><span class="event-time">' + String(event.ms).padStart(4, "0") + 'ms</span><span class="event-symbol">' + symbol + '</span><div class="event-copy"><strong>' + escapeHtml(event.title) + '</strong><span>' + escapeHtml(event.detail) + '</span></div></div>';
   }).join("");
   els.timeline.scrollTop = els.timeline.scrollHeight;
-  els.timelineBottom.textContent = step === sequence().length - 1 ? "Scenario complete · demo data" : "Streaming controlled scenario events";
+  els.timelineBottom.textContent = step === sequence().length - 1 ? "Scenario complete · " + trialMeta[mode].source + " data" : "Stepping through " + trialMeta[mode].source + " events";
 }
 
 function renderChart() {
@@ -180,7 +197,7 @@ function renderChart() {
   els.chartArea.setAttribute("d", "M" + points[0].x + " 174 L" + points.map(p => p.x + " " + p.y).join(" L") + " L" + last.x + " 174 Z");
   els.chartPoint.setAttribute("cx", String(last.x));
   els.chartPoint.setAttribute("cy", String(last.y));
-  const color = mode === "vulnerable" && step === sequence().length - 1 ? "#ff6879" : mode === "protected" && step === sequence().length - 1 ? "#73d9a7" : "#54d4e0";
+  const color = trialMeta[mode].status === "deadlock" && step === sequence().length - 1 ? "#ff6879" : trialMeta[mode].status === "completed" && step === sequence().length - 1 ? "#73d9a7" : "#54d4e0";
   els.chartLine.setAttribute("stroke", color);
   els.chartPoint.setAttribute("fill", color);
 }
@@ -213,6 +230,33 @@ function renderCompare() {
   const show = completed.vulnerable && completed.protected;
   els.compareEmpty.hidden = show;
   els.compareResults.hidden = !show;
+  if (!show) return;
+  const vulnerable = DeadlockTrialData.summarize(scenarios.vulnerable, trialMeta.vulnerable.status);
+  const protectedRun = DeadlockTrialData.summarize(scenarios.protected, trialMeta.protected.status);
+  const put = (id, value) => { document.getElementById(id).textContent = value; };
+  put("compare-v-source", trialMeta.vulnerable.source.toUpperCase());
+  put("compare-p-source", trialMeta.protected.source.toUpperCase());
+  put("compare-v-title", vulnerable.status === "deadlock" ? "Circular wait formed" : "Threads completed");
+  put("compare-v-description", vulnerable.status === "deadlock" ? "The final Wait-For Graph contains a cycle." : "This vulnerable trial finished without a cycle.");
+  put("compare-v-result", vulnerable.status === "deadlock" ? "DEADLOCK" : "COMPLETE");
+  put("compare-v-blocked", vulnerable.blockedPeak + " / 2");
+  put("compare-v-cycle", vulnerable.cycle ? "Cycle found" : "No cycle");
+  put("compare-v-score", vulnerable.peakScore + " / 100");
+  put("compare-v-lead", vulnerable.warningLeadMs === null ? "—" : vulnerable.warningLeadMs + " ms");
+  put("compare-p-title", protectedRun.status === "completed" ? "Both threads finished" : "Circular wait formed");
+  put("compare-p-description", protectedRun.status === "completed" ? "The protected trial completed without a cycle." : "This trial still ended in deadlock; review its lock ordering.");
+  put("compare-p-result", protectedRun.status === "completed" ? "COMPLETE" : "DEADLOCK");
+  put("compare-p-completed", protectedRun.completedThreads + " / 2");
+  put("compare-p-cycle", protectedRun.cycle ? "Cycle found" : "No cycle");
+  put("compare-p-score", protectedRun.peakScore + " / 100");
+  put("compare-p-duration", protectedRun.status === "completed" ? protectedRun.durationMs + " ms" : "—");
+  document.getElementById("compare-v-result").className = "compare-big " + (vulnerable.status === "deadlock" ? "danger-text" : "safe-text");
+  document.getElementById("compare-p-result").className = "compare-big " + (protectedRun.status === "deadlock" ? "danger-text" : "safe-text");
+  put("compare-insight-text",
+    vulnerable.status === "deadlock" && protectedRun.status === "completed"
+      ? "In these displayed runs, a circular wait formed in vulnerable mode and both threads completed in protected mode. " +
+        (trialMeta.vulnerable.source === "demo" && trialMeta.protected.source === "demo" ? "These are browser demonstration outcomes." : "Imported trial values are shown as provided.")
+      : "These displayed runs do not show the expected vulnerable-versus-protected contrast. Review the event logs and lock policy before drawing a conclusion.");
 }
 
 function render() {
@@ -225,7 +269,13 @@ function render() {
   renderHeatmap(frame);
   renderAnalysis(frame);
   renderCompare();
-  els.scenarioOutcome.textContent = mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
+  const source = trialMeta[mode];
+  els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
+  els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : "Imported trial · " + source.runId;
+  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : "Events loaded from your JSON file; no server request was made.";
+  els.restoreButton.hidden = source.source === "demo";
+  els.scenarioOutcome.textContent = source.source === "imported" ? "Viewing recorded trial " + source.runId :
+    mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
 }
 
 const viewNames = { lab: "SIMULATION LAB", analysis: "ANALYSIS", compare: "COMPARE RUNS", method: "HOW IT WORKS" };
@@ -238,26 +288,70 @@ function showView(name) {
     if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   });
   document.getElementById("breadcrumb-current").textContent = viewNames[name];
+  if (name === "compare") {
+    const sources = [trialMeta.vulnerable.source, trialMeta.protected.source];
+    els.sourceBadge.textContent = sources.every(source => source === "demo") ? "DEMO DATA" :
+      sources.every(source => source === "imported") ? "IMPORTED TRIALS" : "MIXED SOURCES";
+  } else {
+    els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function exportCsv() {
   const quote = value => '"' + String(value).replaceAll('"', '""') + '"';
-  const rows = [["mode", "time_ms", "event", "detail", "risk_score", "owner_A", "owner_B", "waiting_T1", "waiting_T2"]];
+  const rows = [["mode", "run_id", "source", "time_ms", "event", "detail", "risk_score", "owner_A", "owner_B", "waiting_T1", "waiting_T2"]];
   for (const runMode of ["vulnerable", "protected"]) {
     for (const event of scenarios[runMode].slice(1)) {
-      rows.push([runMode, event.ms, event.title, event.detail, event.score, event.owners.A || "", event.owners.B || "", event.waits.T1 || "", event.waits.T2 || ""]);
+      rows.push([runMode, trialMeta[runMode].runId, trialMeta[runMode].source, event.ms, event.title, event.detail, event.score, event.owners.A || "", event.owners.B || "", event.waits.T1 || "", event.waits.T2 || ""]);
     }
   }
   const blob = new Blob([rows.map(row => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "deadlock-lab-demo-events.csv";
+  link.download = "deadlock-lab-trial-events.csv";
   document.body.appendChild(link);
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function showImportFeedback(message, success) {
+  els.importFeedback.hidden = false;
+  els.importFeedback.classList.toggle("is-success", success);
+  els.importFeedback.textContent = message;
+}
+
+function loadTrial(data) {
+  const imported = DeadlockTrialData.normalizeTrial(data);
+  stopPlayback();
+  scenarios[imported.mode] = imported.frames;
+  trialMeta[imported.mode] = { source: "imported", runId: imported.runId, status: imported.status };
+  completed[imported.mode] = false;
+  mode = imported.mode;
+  step = 0;
+  document.querySelectorAll("[data-mode]").forEach(button => {
+    const selected = button.dataset.mode === mode;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  render();
+  showView("lab");
+  showImportFeedback("Loaded " + imported.runId + ". Run or step through " + imported.frames.length + " recorded states.", true);
+  return imported;
+}
+
+function restoreDemo() {
+  stopPlayback();
+  scenarios[mode] = demoScenarios[mode];
+  trialMeta[mode] = mode === "vulnerable"
+    ? { source: "demo", runId: "demo-vulnerable", status: "deadlock" }
+    : { source: "demo", runId: "demo-protected", status: "completed" };
+  completed[mode] = false;
+  step = 0;
+  els.importFeedback.hidden = true;
+  render();
 }
 
 document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => setMode(button.dataset.mode)));
@@ -267,5 +361,20 @@ document.getElementById("step-button").addEventListener("click", () => { stopPla
 document.getElementById("reset-button").addEventListener("click", reset);
 document.getElementById("compare-run-button").addEventListener("click", () => { completed = { vulnerable: true, protected: true }; renderCompare(); });
 document.getElementById("export-button").addEventListener("click", exportCsv);
+document.getElementById("import-button").addEventListener("click", () => els.trialFile.click());
+els.restoreButton.addEventListener("click", restoreDemo);
+els.trialFile.addEventListener("change", async () => {
+  const file = els.trialFile.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 1048576) throw new Error("Trial JSON must be 1 MB or smaller.");
+    loadTrial(JSON.parse(await file.text()));
+  } catch (error) {
+    showImportFeedback(error instanceof Error ? error.message : "Could not read the trial JSON.", false);
+  } finally {
+    els.trialFile.value = "";
+  }
+});
+window.DeadlockLab = { loadTrial, restoreDemo };
 render();
 
