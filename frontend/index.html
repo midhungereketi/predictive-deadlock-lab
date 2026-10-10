@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
+  <script src="./trial-data.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -36,7 +37,7 @@
     <main class="main">
       <header class="topbar">
         <div class="breadcrumb"><span>OPERATING SYSTEMS</span><span class="crumb-line">/</span><strong id="breadcrumb-current">SIMULATION LAB</strong></div>
-        <div class="top-actions"><span class="top-demo"><span class="tiny-dot"></span> DEMO DATA</span><span class="top-date">PREDICTIVE DEADLOCK PREVENTION</span></div>
+        <div class="top-actions"><span class="top-demo"><span class="tiny-dot"></span> <span id="source-badge">DEMO DATA</span></span><span class="top-date">PREDICTIVE DEADLOCK PREVENTION</span></div>
       </header>
 
       <div class="content">
@@ -57,6 +58,8 @@
           </div>
 
           <div class="scenario-strip"><span class="scenario-tag">SCENARIO</span><span><b>T1</b> requests A → B</span><span class="scenario-divider"></span><span><b>T2</b> requests B → A</span><span class="scenario-arrow">→</span><span id="scenario-outcome">Unordered acquisition can create a circular wait</span></div>
+          <div class="data-source-row"><span><span class="source-led"></span><b id="data-source-label">Built-in demonstration</b><small id="data-source-detail">Scenario events are generated in this browser.</small></span><div><button id="import-button" type="button">↑ Import trial JSON</button><button id="restore-button" type="button" hidden>Restore demo</button><input id="trial-file" type="file" accept=".json,application/json" hidden></div></div>
+          <p id="import-feedback" class="import-feedback" role="status" aria-live="polite" hidden></p>
 
           <div class="metrics">
             <article class="metric panel"><div class="metric-heading">THREAT SCORE <span class="metric-glyph">⌁</span></div><div class="metric-value"><span id="metric-score">08</span><small>/ 100</small></div><div class="metric-foot"><span id="risk-chip" class="chip chip-calm">LOW RISK</span><span>heuristic estimate</span></div></article>
@@ -104,9 +107,32 @@
 
         <section id="view-compare" class="view" aria-labelledby="compare-title">
           <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> EXPERIMENT RESULTS <span class="eyebrow-num">/ 03</span></div><h1 id="compare-title">One scenario. <em>Two outcomes.</em></h1><p>Compare the deliberately vulnerable schedule against consistent lock ordering.</p></div>
-          <div class="compare-toolbar panel"><div><strong>Side-by-side demo</strong><span>Run both modes to populate this comparison.</span></div><button id="compare-run-button" class="button button-primary" type="button">Generate demo comparison <span>↗</span></button></div>
+          <div class="compare-toolbar panel"><div><strong>Side-by-side comparison</strong><span>Complete both modes, or inspect the available scenario outcomes.</span></div><button id="compare-run-button" class="button button-primary" type="button">Compare available runs <span>↗</span></button></div>
           <div id="compare-empty" class="compare-empty panel"><div class="empty-symbol">↔</div><h2>Ready to compare</h2><p>Use the button above, or complete one run in each mode. Results will appear here.</p></div>
-          <div id="compare-results" class="compare-results" hidden><div class="compare-columns"><article class="panel compare-mode danger-mode"><div class="compare-mode-top"><span class="compare-symbol">×</span><span>MODE 01 / VULNERABLE</span></div><h2>Circular wait formed</h2><p>T1 holds A while requesting B. T2 holds B while requesting A.</p><div class="compare-big danger-text">DEADLOCK</div><div class="compare-mini"><span>Blocked threads</span><strong>2 / 2</strong></div><div class="compare-mini"><span>Wait-For Graph</span><strong>T1 ↔ T2</strong></div><div class="compare-mini"><span>Peak threat score</span><strong>96 / 100</strong></div></article><article class="panel compare-mode safe-mode"><div class="compare-mode-top"><span class="compare-symbol">✓</span><span>MODE 02 / PROTECTED</span></div><h2>Both threads finished</h2><p>Requests are reordered before acquisition so both threads follow A → B.</p><div class="compare-big safe-text">COMPLETE</div><div class="compare-mini"><span>Completed threads</span><strong>2 / 2</strong></div><div class="compare-mini"><span>Wait-For Graph</span><strong>No cycle</strong></div><div class="compare-mini"><span>Peak threat score</span><strong>39 / 100</strong></div></article></div><div class="compare-insight panel"><span class="insight-kicker">THE OBSERVATION</span><p>The vulnerable run reaches a circular wait. A common lock order removes the circular-wait condition while allowing both threads to finish. These are demonstration outcomes; repeated real-thread trials belong to the backend experiment.</p></div><button id="export-button" class="button button-outline" type="button">↓ Export demo events as CSV</button></div>
+          <div id="compare-results" class="compare-results" hidden>
+            <div class="compare-columns">
+              <article id="compare-v-card" class="panel compare-mode danger-mode">
+                <div class="compare-mode-top"><span class="compare-symbol">×</span><span>MODE 01 / VULNERABLE · <span id="compare-v-source">DEMO</span></span></div>
+                <h2 id="compare-v-title">Circular wait formed</h2><p id="compare-v-description">T1 holds A while requesting B. T2 holds B while requesting A.</p>
+                <div id="compare-v-result" class="compare-big danger-text">DEADLOCK</div>
+                <div class="compare-mini"><span>Peak blocked threads</span><strong id="compare-v-blocked">2 / 2</strong></div>
+                <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-v-cycle">Cycle found</strong></div>
+                <div class="compare-mini"><span>Peak threat score</span><strong id="compare-v-score">96 / 100</strong></div>
+                <div class="compare-mini"><span>Warning lead time</span><strong id="compare-v-lead">400 ms</strong></div>
+              </article>
+              <article id="compare-p-card" class="panel compare-mode safe-mode">
+                <div class="compare-mode-top"><span class="compare-symbol">✓</span><span>MODE 02 / PROTECTED · <span id="compare-p-source">DEMO</span></span></div>
+                <h2 id="compare-p-title">Both threads finished</h2><p id="compare-p-description">Requests are reordered before acquisition so both threads follow A → B.</p>
+                <div id="compare-p-result" class="compare-big safe-text">COMPLETE</div>
+                <div class="compare-mini"><span>Completed threads</span><strong id="compare-p-completed">2 / 2</strong></div>
+                <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-p-cycle">No cycle</strong></div>
+                <div class="compare-mini"><span>Peak threat score</span><strong id="compare-p-score">39 / 100</strong></div>
+                <div class="compare-mini"><span>Run duration</span><strong id="compare-p-duration">1200 ms</strong></div>
+              </article>
+            </div>
+            <div class="compare-insight panel"><span class="insight-kicker">THE OBSERVATION</span><p id="compare-insight-text">The two runs use the same resource pair. Review the measurements above.</p></div>
+            <button id="export-button" class="button button-outline" type="button">↓ Export current trial events as CSV</button>
+          </div>
         </section>
 
         <section id="view-method" class="view" aria-labelledby="method-title">
