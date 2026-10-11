@@ -2,7 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { normalizeTrial, summarize, hasCycle } = require("../dist/trial-data.js");
+const trialDataPath = fs.existsSync(path.join(__dirname, "../dist/trial-data.js"))
+  ? "../dist/trial-data.js"
+  : "../trial-data.js";
+const { normalizeTrial, summarize, hasCycle } = require(trialDataPath);
 
 function example(name) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, "../contract", name), "utf8"));
