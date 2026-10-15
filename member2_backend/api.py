@@ -118,6 +118,18 @@ def run_trial_v1_get(
     return to_trial_v1(result)
 
 
+# Include Member 3 Analysis & Forecasting API router
+import sys
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+try:
+    from member3_analysis.api_routes import router as analysis_router
+    app.include_router(analysis_router)
+except Exception as e:
+    print(f"Warning: Member 3 analysis router could not be loaded: {e}")
+
 # Mount frontend static files if available
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if frontend_dir.is_dir():
