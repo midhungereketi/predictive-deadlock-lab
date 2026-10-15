@@ -33,7 +33,7 @@ flowchart LR
   O --> P
 ```
 
-The browser can replay built-in examples or import a trial JSON file. When served by FastAPI at `http://127.0.0.1:8000/`, it can call live trial and batch APIs. The separate static preview contains no Python runtime and therefore supports demo and file import only.
+The browser can replay built-in examples or import a trial JSON file. When served by FastAPI locally at `http://127.0.0.1:8000/` or at `https://predictive-deadlock-lab.vercel.app/`, it can call live trial and batch APIs. The separate static preview contains no Python runtime and therefore supports demo and file import only.
 
 ### Modules
 

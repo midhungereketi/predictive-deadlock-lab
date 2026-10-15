@@ -1,4 +1,4 @@
-/* Browser demonstration only. Replace these snapshots with timestamped backend events later. */
+/* Built-in browser scenarios; live trials are loaded through the FastAPI endpoints below. */
 const demoScenarios = {
   vulnerable: [
     { ms: 0, title: "Ready to run", detail: "Select Run or advance one step.", kind: "neutral", owners: {}, waits: {}, score: 8, waitMs: 0, heat: 0, t1: "IDLE", t2: "IDLE", explanation: "An edge appears when one thread waits for a lock held by another." },
@@ -63,6 +63,7 @@ const els = {
   analysisOrderNote: document.getElementById("analysis-order-note"),
   compareEmpty: document.getElementById("compare-empty"),
   compareResults: document.getElementById("compare-results"),
+  compareRunBtn: document.getElementById("compare-run-button"),
   sourceBadge: document.getElementById("source-badge"),
   sourceLabel: document.getElementById("data-source-label"),
   sourceDetail: document.getElementById("data-source-detail"),
@@ -370,8 +371,9 @@ function renderAnalysis(frame) {
 
 function renderCompare() {
   const show = completed.vulnerable && completed.protected;
-  els.compareEmpty.hidden = show;
+  els.compareEmpty.hidden = show || !els.batchSection.hidden;
   els.compareResults.hidden = !show;
+  els.compareRunBtn.disabled = !show;
   if (!show) return;
   const vulnerable = DeadlockTrialData.summarize(scenarios.vulnerable, trialMeta.vulnerable.status);
   const protectedRun = DeadlockTrialData.summarize(scenarios.protected, trialMeta.protected.status);
@@ -414,7 +416,7 @@ function render() {
   const source = trialMeta[mode];
   els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : source.source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
   els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : (source.source === "live" ? "Backend trial · " : "Imported trial · ") + source.runId;
-  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : source.source === "live" ? "Recorded from real threads by the local backend." : "Events loaded from your JSON file; no server request was made.";
+  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : source.source === "live" ? "Recorded from real threads by the FastAPI backend." : "Events loaded from your JSON file; no server request was made.";
   els.restoreButton.hidden = source.source === "demo";
   els.scenarioOutcome.textContent = source.source !== "demo" ? "Viewing recorded trial " + source.runId :
     mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
@@ -503,7 +505,7 @@ document.querySelectorAll("[data-view]").forEach(button => button.addEventListen
 els.playButton.addEventListener("click", togglePlayback);
 document.getElementById("step-button").addEventListener("click", () => { stopPlayback(); advance(); });
 document.getElementById("reset-button").addEventListener("click", reset);
-document.getElementById("compare-run-button").addEventListener("click", () => { completed = { vulnerable: true, protected: true }; renderCompare(); });
+els.compareRunBtn.addEventListener("click", renderCompare);
 document.getElementById("export-button").addEventListener("click", exportCsv);
 document.getElementById("import-button").addEventListener("click", () => els.trialFile.click());
 els.restoreButton.addEventListener("click", restoreDemo);
@@ -551,7 +553,7 @@ async function runLiveTrial(targetMode = mode) {
   } catch (err) {
     const msg = err.name === "AbortError"
       ? "Experiment request timed out after 8s."
-      : "Could not reach Member 2 backend at /api/trials/" + targetMode + " (" + err.message + "). Ensure backend server is running via `python -m member2_backend.api` or use demo mode.";
+      : "Could not reach the experiment backend at /api/trials/" + targetMode + " (" + err.message + "). For local use, start FastAPI; otherwise import a saved trial.";
     showImportFeedback(msg, false);
   } finally {
     isRunningLive = false;
@@ -593,6 +595,7 @@ async function runBatchComparison() {
 
     if (els.batchSection && els.batchTbody) {
       els.batchSection.hidden = false;
+      if (els.compareEmpty) els.compareEmpty.hidden = true;
       const v = data.vulnerable;
       const p = data.protected;
 
@@ -624,7 +627,7 @@ async function runBatchComparison() {
     }
     showImportFeedback("Batch request finished. Review the measured rates and any inconclusive trials in the table below.", true);
   } catch (err) {
-    showImportFeedback("Batch comparison failed: " + err.message + ". Ensure FastAPI backend is running via `python -m uvicorn member2_backend.api:app`.", false);
+    showImportFeedback("Batch comparison failed: " + err.message + ". Check the FastAPI server or hosted deployment.", false);
   } finally {
     isRunningBatch = false;
     if (els.batchBtn) {
@@ -683,7 +686,7 @@ function setupWeightControls() {
         render();
         showImportFeedback("Saved scoring settings for future backend trials. Existing trial scores were not recalculated.", true);
       } catch (error) {
-        showImportFeedback("Could not save scoring settings: " + error.message + ". Start the local backend and try again.", false);
+        showImportFeedback("Could not save scoring settings: " + error.message + ". Check the FastAPI server or hosted deployment.", false);
       }
     });
   }

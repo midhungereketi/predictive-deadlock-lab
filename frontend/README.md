@@ -4,7 +4,7 @@ An interactive browser demonstration for the Operating Systems case study **Pred
 
 ## Run locally
 
-Open `index.html` in a browser, or serve this `frontend/` directory with any static HTTP server. No package installation or build step is required for demo playback or JSON import. To run real trials, start the repository's FastAPI server as described in the root README and open its local URL.
+Open `index.html` in a browser, or serve this `frontend/` directory with any static HTTP server. No package installation or build step is required for demo playback or JSON import. To run real trials, start the repository's FastAPI server as described in the root README or visit the integrated hosted app at https://predictive-deadlock-lab.vercel.app/.
 
 ## What works
 
@@ -14,7 +14,7 @@ Open `index.html` in a browser, or serve this `frontend/` directory with any sta
 - Side-by-side outcome comparison and CSV export derived from current trial data.
 - Responsive desktop and mobile layouts.
 
-The built-in scenarios are deterministic **demo data generated in the browser**. The frontend can import trial JSON or call the local backend using **Run live backend trial**. The browser itself does not run OS threads. The separately hosted static preview has no Python backend.
+The built-in scenarios are deterministic **demo data generated in the browser**. The frontend can import trial JSON or call FastAPI using **Run live backend trial**. The browser itself does not run OS threads. The separately hosted static preview has no Python backend.
 
 ## Backend handoff
 
@@ -42,7 +42,7 @@ The backend runs bounded real-thread trials and returns versioned JSON through `
 }
 ```
 
-The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend returns this format through the local API; users can also import saved JSON. The UI derives graph edges and comparison metrics from recorded snapshots.
+The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend returns this format through the local or hosted API; users can also import saved JSON. The UI derives graph edges and comparison metrics from recorded snapshots.
 
 Run the contract checks with:
 

@@ -8,7 +8,7 @@ Operating Systems case study: **Predictive Deadlock Prevention Using Contention 
 - **Backend (Member 2 — P. Satya Mani Shraavanth):** Real-thread experiment engine under [`member2_backend/`](member2_backend/). It runs controlled vulnerable and protected trials with bounded lock waits and exposes local FastAPI endpoints. The protected run first observes a cycle-free contention probe and derives a shared lock order from it.
 - **Analysis & Evaluation (Member 3 — M. Lakshman Sai):** Analysis code under [`member3_analysis/`](member3_analysis/). It builds a Wait-For Graph, detects cycles, scores observed contention, and compares repeated trials. The warning uses a documented structural heuristic for this controlled two-lock experiment.
 
-The live buttons require the local FastAPI server. The separately hosted static website cannot execute the Python backend. Batch results appear in the batch table; the side-by-side cards show the currently loaded individual trials.
+**Hosted integrated app:** https://predictive-deadlock-lab.vercel.app/ (FastAPI and frontend). The live buttons also work with the local FastAPI server. A separately hosted static preview cannot execute the Python backend. Batch results appear in the batch table; the side-by-side cards show the currently loaded individual trials.
 
 **Submission material:** [`docs/FINAL_REPORT.md`](docs/FINAL_REPORT.md) contains the design, algorithm, measured 10-trial-per-mode results, and limitations. [`docs/DEMO_AND_PRESENTATION.md`](docs/DEMO_AND_PRESENTATION.md) has the demo steps, slide sequence, and viva answers. [`docs/results.json`](docs/results.json) contains the raw aggregate and per-trial measurements. The two `docs/sample-*.json` files can be imported into the dashboard.
 

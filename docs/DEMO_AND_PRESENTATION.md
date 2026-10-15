@@ -11,6 +11,8 @@ python -m uvicorn member2_backend.api:app --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000/` on the same computer. Check `http://127.0.0.1:8000/api/health` if the page does not load. Keep the server running while presenting. The hosted static preview can replay examples but cannot execute Python trials.
 
+The integrated app is also deployed at `https://predictive-deadlock-lab.vercel.app/`; the live buttons were verified there. If deployment access is restricted for another viewer, use the local server instructions above.
+
 ## Three-minute live demonstration
 
 1. **Midhun:** Show the dashboard's timeline, Wait-For Graph, score trend, and heatmap. State that built-in playback is illustrative; click **Run live backend trial** for actual thread data.

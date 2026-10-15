@@ -1,6 +1,6 @@
 # Predictive Deadlock Lab - implemented architecture
 
-The local browser dashboard is backed by FastAPI. Python threads and mutexes perform the Operating Systems experiment. The separate hosted static preview can replay data and import JSON, but does not run Python.
+The browser dashboard is backed by FastAPI locally or on the integrated Vercel deployment. Python threads and mutexes perform the Operating Systems experiment. The separate legacy static preview can replay data and import JSON, but does not run Python.
 
 ```mermaid
 flowchart LR
