@@ -15,6 +15,7 @@ from .config import (
 from .event_logger import EventLogger
 from .lock_manager import LockManager
 from .schemas import ExperimentMetrics, ExperimentResult
+from .adaptive_policy import order_from_observation
 
 
 def run_protected_experiment(
@@ -35,6 +36,7 @@ def run_protected_experiment(
     """
     logger = EventLogger(trial_id=trial_id, mode="protected")
     lock_mgr = LockManager(logger=logger, resources=["A", "B"])
+    start_mono = time.monotonic()
 
     logger.log_event(
         thread="system",
@@ -43,7 +45,80 @@ def run_protected_experiment(
         owner=None,
         wait_ms=0,
         title="Protected experiment started",
-        detail="Threads initialized with common lock order policy (A -> B).",
+        detail="First observe a bounded contention probe, then apply its learned total lock order.",
+    )
+
+    # Calibration phase: create one real cross-resource wait, inspect it, and
+    # release B before T2 requests A. The probe therefore cannot form a cycle.
+    # It is included in the event stream so the warning and policy are auditable.
+    probe_ready = threading.Barrier(2)
+    release_probe = threading.Event()
+    probe_errors = []
+
+    def probe_t1():
+        held = []
+        try:
+            if not lock_mgr.acquire("T1", "A", timeout=0.5):
+                raise RuntimeError("Calibration could not acquire A.")
+            held.append("A")
+            probe_ready.wait(timeout=1.0)
+            if not lock_mgr.acquire("T1", "B", timeout=0.5):
+                raise RuntimeError("Calibration wait for B timed out.")
+            held.append("B")
+        except Exception as exc:
+            probe_errors.append(str(exc))
+        finally:
+            for resource in reversed(held):
+                lock_mgr.release("T1", resource)
+
+    def probe_t2():
+        try:
+            if not lock_mgr.acquire("T2", "B", timeout=0.5):
+                raise RuntimeError("Calibration could not acquire B.")
+            probe_ready.wait(timeout=1.0)
+            if not release_probe.wait(timeout=0.5):
+                raise RuntimeError("Calibration observer did not release B.")
+        except Exception as exc:
+            probe_errors.append(str(exc))
+        finally:
+            lock_mgr.release("T2", "B")
+
+    probe1 = threading.Thread(target=probe_t1, name="Calibration-T1")
+    probe2 = threading.Thread(target=probe_t2, name="Calibration-T2")
+    probe1.start()
+    probe2.start()
+    learned_order = None
+    probe_deadline = time.monotonic() + 0.5
+    try:
+        while time.monotonic() < probe_deadline:
+            owners = lock_mgr.get_owners_copy()
+            waits = lock_mgr.get_waits_copy()
+            if waits.get("T1") == "B" and owners.get("A") == "T1" and owners.get("B") == "T2":
+                learned_order = order_from_observation(owners, waits, ["A", "B"])
+                logger.log_event(
+                    thread="system", action="warning", resource=None, owner=None,
+                    wait_ms=0, title="Contention warning before a cycle",
+                    detail=f"Observed T1 waiting for B while holding A. Derived safe order: {' -> '.join(learned_order)}.",
+                )
+                break
+            time.sleep(0.001)
+    finally:
+        release_probe.set()
+        probe1.join(timeout=0.7)
+        probe2.join(timeout=0.7)
+
+    if learned_order is None or probe_errors or probe1.is_alive() or probe2.is_alive():
+        return ExperimentResult(
+            trial_id=trial_id, mode="protected", status="error", deadlock_detected=False,
+            completion_time_ms=0, events=logger.get_events(),
+            metrics=ExperimentMetrics(threads_started=0),
+            error="Adaptive calibration failed: " + ("; ".join(probe_errors) or "no valid warning observed"),
+        )
+    lock_mgr.order = learned_order
+    logger.log_event(
+        thread="system", action="policy_applied", resource=None, owner=None,
+        wait_ms=0, title="Adaptive lock order activated",
+        detail=f"All subsequent lock requests use {' -> '.join(learned_order)} based on the observed conflict.",
     )
 
     t1_status = {"completed": False, "timed_out": False, "error": None}
@@ -92,7 +167,6 @@ def run_protected_experiment(
                 res = acquired_stack.pop()
                 lock_mgr.release(thread_id, res)
 
-    start_mono = time.monotonic()
     t1 = threading.Thread(target=execute_worker, args=("T1", ["A", "B"], t1_status), name="Protected-T1")
     t2 = threading.Thread(target=execute_worker, args=("T2", ["B", "A"], t2_status), name="Protected-T2")
 

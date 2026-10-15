@@ -83,7 +83,7 @@ File: `member3_analysis/comparator.py`
 
 Executes repeated trials (default $N=5$ per mode) on real threads via `member2_backend.experiment_runner.run_experiment`. Run the endpoint to obtain the values for the current machine and run; the table below defines what is measured and does not assert fixed outcomes:
 
-| Metric | Vulnerable Mode (Opposite Orders) | Protected Mode (Canonical Order $A \rightarrow B$) |
+| Metric | Vulnerable Mode (Opposite Orders) | Protected Mode (Order Derived from Probe) |
 |---|---|---|
 | **Lock Ordering** | $T_1: A \rightarrow B$, $T_2: B \rightarrow A$ | $T_1: A \rightarrow B$, $T_2: A \rightarrow B$ |
 | **Deadlock Rate** | Cycle-confirmed trials ÷ trials run | Cycle-confirmed trials ÷ trials run |
@@ -93,7 +93,7 @@ Executes repeated trials (default $N=5$ per mode) on real threads via `member2_b
 | **Peak Threat Score** | Maximum of time-local trial scores | Maximum of time-local trial scores |
 | **Coffman Condition 4** | Circular wait confirmed | Circular wait eliminated |
 
-> **Experimental Note:** A 120 ms staged observation window makes the warning lead time measurable in the vulnerable teaching scenario. It is part of the controlled schedule and does not establish predictive performance under arbitrary scheduling. The trial runner uses bounded waits in one Python process, not a separately isolated worker process.
+> **Experimental Note:** A 120 ms staged observation window makes the warning lead time measurable in the vulnerable teaching scenario. Protected mode derives its common order from a cycle-free contention probe before the main workers. These controlled schedules do not establish predictive performance under arbitrary scheduling. The trial runner uses bounded waits in one Python process, not a separately isolated worker process.
 
 ---
 

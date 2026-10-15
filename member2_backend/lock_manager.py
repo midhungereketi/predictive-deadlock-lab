@@ -14,17 +14,21 @@ from .event_logger import EventLogger
 class LockManager:
     """Manages shared mutex resources, ownership tracking, and acquisition ordering."""
 
-    def __init__(self, logger: EventLogger, resources: Optional[List[str]] = None):
+    def __init__(self, logger: EventLogger, resources: Optional[List[str]] = None,
+                 order: Optional[List[str]] = None):
         self.logger = logger
         self.resource_names = resources or ["A", "B"]
+        self.order = list(order or COMMON_LOCK_ORDER)
+        if set(self.order) != set(self.resource_names) or len(self.order) != len(self.resource_names):
+            raise ValueError("Lock order must contain each resource exactly once.")
         self._locks: Dict[str, threading.Lock] = {r: threading.Lock() for r in self.resource_names}
         self._meta_lock = threading.Lock()
         self._owners: Dict[str, str] = {}  # resource -> thread
         self._waiters: Dict[str, str] = {}  # thread -> resource
 
     def get_canonical_order(self, requested_resources: List[str]) -> List[str]:
-        """Normalize resource acquisition to the common global order (A -> B)."""
-        order_map = {res: idx for idx, res in enumerate(COMMON_LOCK_ORDER)}
+        """Normalize resource acquisition to this run's learned total order."""
+        order_map = {res: idx for idx, res in enumerate(self.order)}
         return sorted(requested_resources, key=lambda r: order_map.get(r, 999))
 
     def is_owned(self, resource_id: str) -> bool:

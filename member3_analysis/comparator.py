@@ -245,8 +245,10 @@ class ExperimentComparator:
             },
             "insight": insight,
             "scientific_disclaimer": (
-                "Note: 0 observed deadlocks in protected mode represents an experimental observation under "
-                "controlled canonical lock ordering. While total ordering provably prevents circular wait "
-                "for single-instance resources, real systems may encounter lock ordering inversions in complex call graphs."
+                f"Protected mode had {prot_summary['deadlock_count']} observed deadlocks and "
+                f"{prot_summary['inconclusive_count']} inconclusive runs in this controlled sample. "
+                "Its order is derived from a short, cycle-free contention probe before the main workers start. "
+                "A common total order removes circular wait for these two single-instance locks; "
+                "the result does not establish performance on arbitrary programs or schedules."
             ),
         }

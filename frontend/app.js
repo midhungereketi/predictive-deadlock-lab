@@ -608,7 +608,7 @@ async function runBatchComparison() {
           <td>${v.mean_trial_runtime_ms} ms</td>
         </tr>
         <tr style="color:var(--green);">
-          <td><strong>Protected (Canonical A→B)</strong></td>
+          <td><strong>Protected (learned shared order)</strong></td>
           <td>${p.total_trials}</td>
           <td><strong>${p.deadlock_rate_percent}%</strong> (${p.deadlock_count}/${p.total_trials})</td>
           <td><strong>${p.completion_rate_percent}%</strong> (${p.completion_count}/${p.total_trials})</td>

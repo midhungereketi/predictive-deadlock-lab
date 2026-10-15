@@ -71,6 +71,11 @@ def test_api_trial_v1_endpoints():
     assert p_data["schema_version"] == 1
     assert p_data["mode"] == "protected"
     assert p_data["status"] == "completed"
+    actions = [event["action"] for event in p_data["events"]]
+    assert "warning" in actions
+    assert actions.index("warning") < actions.index("policy_applied") < actions.index("complete")
+    assert all(not (event["waits"].get("T1") == "B" and event["waits"].get("T2") == "A")
+               for event in p_data["events"])
 
 
 def test_api_invalid_mode_handling():

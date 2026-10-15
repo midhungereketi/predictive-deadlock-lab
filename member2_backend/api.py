@@ -4,11 +4,9 @@ Author: P. Satya Mani Shraavanth (Member 2)
 Course: BCSE303L - Operating Systems
 """
 
-import os
 from pathlib import Path
 from typing import Any, Dict
 from fastapi import FastAPI, HTTPException, Query, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import API_HOST, API_PORT, DEFAULT_OVERALL_TIMEOUT_SECONDS
@@ -22,16 +20,6 @@ app = FastAPI(
     description="Multithreaded trial execution engine for Operating Systems case study.",
     version="1.0.0",
 )
-
-# Enable CORS for cross-origin frontend requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 @app.get("/api/health", summary="Health check endpoint")
 def health_check() -> Dict[str, str]:
