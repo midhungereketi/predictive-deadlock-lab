@@ -195,17 +195,14 @@ function renderMetrics(frame) {
   els.state.innerHTML = '<span class="state-dot"></span>' + (deadlock ? "Deadlock detected" : safe ? "Run completed" : warning ? "Warning raised" : step ? "In progress" : "Ready to run");
   els.stateDetail.textContent = deadlock ? "Circular wait confirmed" : safe ? "2 of 2 threads finished" : warning ? "Risk threshold exceeded" : step ? "Lock activity observed" : "No active lock requests";
 
-  // Role 3: Update Transparent Factor Breakdown
+  // Show the observed inputs. Weighted points need not equal the displayed
+  // score when the controlled structural warning rule applies.
   if (els.fBlocked) {
-    const b_norm = Math.min(100, (blocked / 2) * 100);
-    const w_norm = Math.min(100, (frame.waitMs / 800) * 100);
-    const c_norm = Math.min(100, (frame.heat / 5) * 100);
-    const r_norm = Object.keys(frame.owners).length >= 2 ? 100 : Object.keys(frame.owners).length === 1 ? 30 : 0;
-
-    els.fBlocked.textContent = "Blocked: " + Math.round(b_norm * scoringConfig.w_b) + "pts";
-    els.fWait.textContent = "Wait: " + Math.round(w_norm * scoringConfig.w_w) + "pts";
-    els.fCont.textContent = "Cont: " + Math.round(c_norm * scoringConfig.w_c) + "pts";
-    els.fOrder.textContent = "Order: " + Math.round(r_norm * scoringConfig.w_r) + "pts";
+    const splitOwners = Object.keys(frame.owners).length === 2 && new Set(Object.values(frame.owners)).size === 2;
+    els.fBlocked.textContent = "Blocked: " + blocked + "/2";
+    els.fWait.textContent = "Peak wait: " + frame.waitMs + " ms";
+    els.fCont.textContent = "Conflicts: " + frame.heat;
+    els.fOrder.textContent = "Split locks: " + (splitOwners ? "yes" : "no");
   }
 
   // Role 3: Early Warning Alert Banner
@@ -225,7 +222,7 @@ function renderMetrics(frame) {
       els.banner.className = "warning-banner";
       if (els.bannerIcon) els.bannerIcon.textContent = "⚠️";
       if (els.bannerTitle) els.bannerTitle.textContent = "HIGH THREAT EARLY WARNING ACTIVE";
-      if (els.bannerDesc) els.bannerDesc.textContent = "Threat score (" + frame.score + ") crossed warning threshold (" + scoringConfig.threshold + ") prior to deadlock formation.";
+      if (els.bannerDesc) els.bannerDesc.textContent = "Threat score (" + frame.score + ") crossed warning threshold (" + scoringConfig.threshold + ") before a cycle was confirmed.";
       if (els.bannerBadge) {
         els.bannerBadge.textContent = "EARLY PREDICTION";
         els.bannerBadge.className = "outline-badge is-warning";
@@ -282,6 +279,13 @@ function renderChart() {
   els.chartArea.setAttribute("d", "M" + points[0].x + " 174 L" + points.map(p => p.x + " " + p.y).join(" L") + " L" + last.x + " 174 Z");
   els.chartPoint.setAttribute("cx", String(last.x));
   els.chartPoint.setAttribute("cy", String(last.y));
+  const thresholdY = 174 - (scoringConfig.threshold / 100) * 160;
+  const thresholdLine = document.querySelector("#risk-chart .threshold-line");
+  const thresholdLabel = document.querySelector("#risk-chart .threshold-label");
+  thresholdLine.setAttribute("y1", String(thresholdY));
+  thresholdLine.setAttribute("y2", String(thresholdY));
+  thresholdLabel.setAttribute("y", String(Math.max(12, thresholdY - 8)));
+  thresholdLabel.textContent = "WARNING THRESHOLD · " + scoringConfig.threshold;
   const color = trialMeta[mode].status === "deadlock" && step === sequence().length - 1 ? "#ff6879" : trialMeta[mode].status === "completed" && step === sequence().length - 1 ? "#73d9a7" : "#54d4e0";
   els.chartLine.setAttribute("stroke", color);
   els.chartPoint.setAttribute("fill", color);
@@ -293,7 +297,7 @@ function renderHeatmap(frame) {
     element.textContent = String(value);
     element.className = "heat-cell " + (value === 0 ? "heat-zero" : value === 1 ? "heat-low" : value < 4 ? "heat-medium" : "heat-high");
   }
-  els.heatDescription.textContent = value === 0 ? "Opposite-order requests make a resource pair stand out." : mode === "protected" ? "The pair contends, but both threads follow a common order." : value >= 4 ? "A ↔ B is a confirmed deadlock hotspot in this run." : "A and B are being requested in conflicting orders.";
+  els.heatDescription.textContent = value === 0 ? "Opposite-order requests make a resource pair stand out." : DeadlockTrialData.hasCycle(frame) ? "A ↔ B forms a confirmed circular wait in this run." : mode === "protected" ? "The pair contends, but both threads follow a common order." : "A and B are being requested in conflicting orders.";
 
   // Role 3: Update Thread x Resource Contention Table
   if (els.resAT1Held) {
@@ -393,7 +397,7 @@ function renderCompare() {
   put("compare-insight-text",
     vulnerable.status === "deadlock" && protectedRun.status === "completed"
       ? "In these displayed runs, a circular wait formed in vulnerable mode and both threads completed in protected mode. " +
-        (trialMeta.vulnerable.source === "demo" && trialMeta.protected.source === "demo" ? "These are browser demonstration outcomes." : "Imported trial values are shown as provided.")
+        (trialMeta.vulnerable.source === "demo" && trialMeta.protected.source === "demo" ? "These are browser demonstration outcomes." : "Recorded trial values are shown as provided.")
       : "These displayed runs do not show the expected vulnerable-versus-protected contrast. Review the event logs and lock policy before drawing a conclusion.");
 }
 
@@ -408,11 +412,11 @@ function render() {
   renderAnalysis(frame);
   renderCompare();
   const source = trialMeta[mode];
-  els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
-  els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : "Imported trial · " + source.runId;
-  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : "Events loaded from your JSON file; no server request was made.";
+  els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : source.source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
+  els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : (source.source === "live" ? "Backend trial · " : "Imported trial · ") + source.runId;
+  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : source.source === "live" ? "Recorded from real threads by the local backend." : "Events loaded from your JSON file; no server request was made.";
   els.restoreButton.hidden = source.source === "demo";
-  els.scenarioOutcome.textContent = source.source === "imported" ? "Viewing recorded trial " + source.runId :
+  els.scenarioOutcome.textContent = source.source !== "demo" ? "Viewing recorded trial " + source.runId :
     mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
 }
 
@@ -429,9 +433,10 @@ function showView(name) {
   if (name === "compare") {
     const sources = [trialMeta.vulnerable.source, trialMeta.protected.source];
     els.sourceBadge.textContent = sources.every(source => source === "demo") ? "DEMO DATA" :
-      sources.every(source => source === "imported") ? "IMPORTED TRIALS" : "MIXED SOURCES";
+      sources.every(source => source === "imported") ? "IMPORTED TRIALS" :
+      sources.every(source => source === "live") ? "LIVE TRIALS" : "MIXED SOURCES";
   } else {
-    els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
+    els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : trialMeta[mode].source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -461,11 +466,12 @@ function showImportFeedback(message, success) {
   els.importFeedback.textContent = message;
 }
 
-function loadTrial(data) {
+function loadTrial(data, source = "imported") {
   const imported = DeadlockTrialData.normalizeTrial(data);
+  if (!["imported", "live"].includes(source)) throw new Error("Unsupported trial source.");
   stopPlayback();
   scenarios[imported.mode] = imported.frames;
-  trialMeta[imported.mode] = { source: "imported", runId: imported.runId, status: imported.status };
+  trialMeta[imported.mode] = { source, runId: imported.runId, status: imported.status };
   completed[imported.mode] = false;
   mode = imported.mode;
   step = 0;
@@ -540,7 +546,7 @@ async function runLiveTrial(targetMode = mode) {
     }
 
     const trialData = await resp.json();
-    loadTrial(trialData);
+    loadTrial(trialData, "live");
     showImportFeedback("Loaded real thread trial " + trialData.run_id + " from Member 2 backend. " + (trialData.status === "deadlock" ? "Circular wait confirmed!" : "Protected run complete!"), true);
   } catch (err) {
     const msg = err.name === "AbortError"
@@ -596,10 +602,10 @@ async function runBatchComparison() {
           <td>${v.total_trials}</td>
           <td><strong>${v.deadlock_rate_percent}%</strong> (${v.deadlock_count}/${v.total_trials})</td>
           <td>${v.completion_rate_percent}% (${v.completion_count}/${v.total_trials})</td>
-          <td>${v.mean_warning_lead_time_ms ? v.mean_warning_lead_time_ms + " ms" : "N/A"}</td>
-          <td>${v.mean_detection_latency_ms ? v.mean_detection_latency_ms + " ms" : "45 ms"}</td>
-          <td>${v.mean_avg_wait_ms} ms</td>
-          <td>${v.mean_completion_time_ms} ms</td>
+          <td>${v.mean_warning_lead_time_ms == null ? "N/A" : v.mean_warning_lead_time_ms + " ms"}</td>
+          <td>${v.mean_detection_latency_ms == null ? "N/A" : v.mean_detection_latency_ms + " ms"}</td>
+          <td>${v.mean_peak_wait_ms} ms</td>
+          <td>${v.mean_trial_runtime_ms} ms</td>
         </tr>
         <tr style="color:var(--green);">
           <td><strong>Protected (Canonical A→B)</strong></td>
@@ -608,17 +614,15 @@ async function runBatchComparison() {
           <td><strong>${p.completion_rate_percent}%</strong> (${p.completion_count}/${p.total_trials})</td>
           <td>N/A (No deadlock)</td>
           <td>N/A (No cycle)</td>
-          <td>${p.mean_avg_wait_ms} ms</td>
-          <td>${p.mean_completion_time_ms} ms</td>
+          <td>${p.mean_peak_wait_ms} ms</td>
+          <td>${p.mean_trial_runtime_ms} ms</td>
         </tr>
       `;
       if (els.batchDesc && data.insight) {
         els.batchDesc.textContent = data.insight;
       }
     }
-    completed = { vulnerable: true, protected: true };
-    renderCompare();
-    showImportFeedback("Batch comparison completed: 5 Vulnerable vs 5 Protected trials measured successfully.", true);
+    showImportFeedback("Batch request finished. Review the measured rates and any inconclusive trials in the table below.", true);
   } catch (err) {
     showImportFeedback("Batch comparison failed: " + err.message + ". Ensure FastAPI backend is running via `python -m uvicorn member2_backend.api:app`.", false);
   } finally {
@@ -647,28 +651,40 @@ function setupWeightControls() {
   });
   if (els.saveWeightsBtn) {
     els.saveWeightsBtn.addEventListener("click", async () => {
-      scoringConfig.w_b = parseFloat(els.inputWb.value);
-      scoringConfig.w_w = parseFloat(els.inputWw.value);
-      scoringConfig.w_c = parseFloat(els.inputWc.value);
-      scoringConfig.w_r = parseFloat(els.inputWr.value);
-      scoringConfig.threshold = parseInt(els.inputTh.value, 10);
-      showImportFeedback("Applied scoring weights: w_b=" + scoringConfig.w_b + ", w_w=" + scoringConfig.w_w + ", w_c=" + scoringConfig.w_c + ", w_r=" + scoringConfig.w_r + ", threshold=" + scoringConfig.threshold, true);
+      const proposed = {
+        w_b: parseFloat(els.inputWb.value),
+        w_w: parseFloat(els.inputWw.value),
+        w_c: parseFloat(els.inputWc.value),
+        w_r: parseFloat(els.inputWr.value),
+        threshold: parseInt(els.inputTh.value, 10)
+      };
+      const weightSum = proposed.w_b + proposed.w_w + proposed.w_c + proposed.w_r;
+      if (Math.abs(weightSum - 1) > 0.001) {
+        showImportFeedback("The four scoring weights must add up to 1.00; current total is " + weightSum.toFixed(2) + ".", false);
+        return;
+      }
       try {
-        await fetch("/api/analysis/config", {
+        const response = await fetch("/api/analysis/config", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            w_blocked: scoringConfig.w_b,
-            w_wait: scoringConfig.w_w,
-            w_contention: scoringConfig.w_c,
-            w_resource: scoringConfig.w_r,
-            threshold_high: scoringConfig.threshold
+            w_blocked: proposed.w_b,
+            w_wait: proposed.w_w,
+            w_contention: proposed.w_c,
+            w_resource: proposed.w_r,
+            threshold_high: proposed.threshold
           })
         });
-      } catch (e) {
-        // Backend offline, local config applied
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "Backend returned " + response.status);
+        }
+        Object.assign(scoringConfig, proposed);
+        render();
+        showImportFeedback("Saved scoring settings for future backend trials. Existing trial scores were not recalculated.", true);
+      } catch (error) {
+        showImportFeedback("Could not save scoring settings: " + error.message + ". Start the local backend and try again.", false);
       }
-      render();
     });
   }
 }

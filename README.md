@@ -5,8 +5,10 @@ Operating Systems case study: **Predictive Deadlock Prevention Using Contention 
 ## Current stage
 
 - **Frontend (Member 1 — Midhun Gereketi):** Complete dashboard prototype located under [`frontend/`](frontend/). Open `frontend/index.html` for browser-based demo playback, Wait-For Graph, event timeline, threat score, contention heatmap, and side-by-side run comparisons.
-- **Backend (Member 2 — P. Satya Mani Shraavanth):** Complete multithreaded experiment backend located under [`member2_backend/`](member2_backend/). Features controlled multithreaded vulnerable and protected trials, canonical lock ordering, barrier synchronization, bounded timeouts, thread-safe event logging, and FastAPI REST endpoints.
-- **Analysis & Evaluation (Member 3 — M. Lakshman Sai):** Complete analytical engine located under [`member3_analysis/`](member3_analysis/). Implements dynamic Wait-For Graph construction, cycle detection (DFS), resource contention heatmap (matrix & thread breakdown), transparent 0–100 threat score formula, slope-based trend & early warning lead time tracking, repeated batch comparison ($N=5$), and REST API endpoints.
+- **Backend (Member 2 — P. Satya Mani Shraavanth):** Real-thread experiment engine under [`member2_backend/`](member2_backend/). It runs controlled vulnerable and protected trials with bounded lock waits and exposes local FastAPI endpoints.
+- **Analysis & Evaluation (Member 3 — M. Lakshman Sai):** Analysis code under [`member3_analysis/`](member3_analysis/). It builds a Wait-For Graph, detects cycles, scores observed contention, and compares repeated trials. The warning uses a documented structural heuristic for this controlled two-lock experiment.
+
+The live buttons require the local FastAPI server. The separately hosted static website cannot execute the Python backend. Batch results appear in the batch table; the side-by-side cards show the currently loaded individual trials.
 
 ## Quick Start & Running the Project
 
@@ -23,10 +25,10 @@ Open **http://127.0.0.1:8000/** in your browser. You can run the built-in demo, 
 
 ### 3. Run Automated Tests
 ```bash
-# Python Backend & Analysis Tests (34 tests)
+# Python Backend & Analysis Tests
 python -m pytest member2_backend/tests/ member3_analysis/tests/ -v
 
-# Member 3 Focused Analysis Tests (18 tests)
+# Member 3 Focused Analysis Tests
 python -m pytest member3_analysis/tests/ -v
 
 # Frontend Contract Tests (4 tests)

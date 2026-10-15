@@ -1,5 +1,7 @@
 # Predictive Deadlock Lab — detailed architecture
 
+> This is the original design diagram from 12 October 2026. The combined branch now contains real-thread backend and analysis modules. The separate-process supervisor and optional hosted API shown below remain proposed; the current local FastAPI server runs bounded trials in its own process.
+
 **Updated:** 12 October 2026  
 **Project:** Predictive Deadlock Prevention Using Contention Analysis and Score Forecasting  
 **Legend:** Blue = implemented frontend; amber = planned experiment/analysis; gray = optional later integration. The arrows show data or control flow, not shared memory between the browser and native threads.

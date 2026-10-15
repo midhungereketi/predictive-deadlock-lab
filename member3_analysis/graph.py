@@ -167,11 +167,9 @@ class WaitForGraph:
                     )
 
         elif action == "deadlock_detected":
-            # Confirmed cycle state: T1 waits for B held by T2; T2 waits for A held by T1
-            self.owners["A"] = "T1"
-            self.owners["B"] = "T2"
-            self.add_dependency("T1", "T2", "B", wait_ms=wait_ms, timestamp=timestamp)
-            self.add_dependency("T2", "T1", "A", wait_ms=wait_ms, timestamp=timestamp)
+            # The notification records a finding; it must not invent graph edges.
+            # The preceding lock ownership and waiting events provide the proof.
+            pass
 
         elif action == "complete":
             self.reset()

@@ -30,6 +30,8 @@ def analyze_trial_events(
     heatmap = ContentionHeatmapTracker()
 
     cycle_detected_at_time = None
+    detection_event_at_time = None
+    observed_cycles = []
     first_warning_at_time = None
     peak_score = 0
     peak_wait_ms = 0
@@ -53,6 +55,9 @@ def analyze_trial_events(
 
         if has_cycle and cycle_detected_at_time is None:
             cycle_detected_at_time = t_ms
+            observed_cycles = snapshot["cycles"]
+        if action == "deadlock_detected" and has_cycle and detection_event_at_time is None:
+            detection_event_at_time = t_ms
 
         if wait_ms > 0:
             total_wait_ms += wait_ms
@@ -99,18 +104,18 @@ def analyze_trial_events(
     if cycle_detected_at_time is not None and first_warning_at_time is not None:
         warning_lead_time_ms = max(0, cycle_detected_at_time - first_warning_at_time)
 
-    # Detection latency: time between first circular wait condition and detection event
+    # Detection latency comes from the event timestamps, not monitor frequency.
     detection_latency_ms = None
-    if cycle_detected_at_time is not None:
-        detection_latency_ms = 45  # In supervisor monitor, cycle check frequency is ~50ms
+    if cycle_detected_at_time is not None and detection_event_at_time is not None:
+        detection_latency_ms = max(0, detection_event_at_time - cycle_detected_at_time)
 
     trend_status = trend.get_trend_status()
     heatmap_summary = heatmap.get_summary()
 
     return {
         "final_graph": graph.get_snapshot(),
-        "has_cycle": graph.has_cycle(),
-        "cycles": graph.find_cycles(),
+        "has_cycle": cycle_detected_at_time is not None,
+        "cycles": observed_cycles,
         "peak_score": peak_score,
         "peak_wait_ms": peak_wait_ms,
         "avg_wait_ms": round(total_wait_ms / max(1, wait_count), 1),
@@ -183,8 +188,11 @@ class ExperimentComparator:
             total = len(data)
             deadlocks = sum(1 for r in data if r["deadlock_detected"] or r["has_cycle"])
             completed = sum(1 for r in data if r["status"] == "completed" and not r["has_cycle"])
-            completion_times = [r["completion_time_ms"] for r in data if r["completion_time_ms"] > 0]
+            inconclusive = total - deadlocks - completed
+            completion_times = [r["completion_time_ms"] for r in data if r["status"] == "completed" and r["completion_time_ms"] > 0]
+            runtimes = [r["completion_time_ms"] for r in data if r["completion_time_ms"] > 0]
             peak_scores = [r["peak_score"] for r in data]
+            peak_waits = [r["peak_wait_ms"] for r in data]
             avg_waits = [r["avg_wait_ms"] for r in data]
             leads = [r["warning_lead_time_ms"] for r in data if r["warning_lead_time_ms"] is not None]
             latencies = [r["detection_latency_ms"] for r in data if r["detection_latency_ms"] is not None]
@@ -199,8 +207,11 @@ class ExperimentComparator:
                 "deadlock_rate_percent": deadlock_rate,
                 "completion_count": completed,
                 "completion_rate_percent": completion_rate,
+                "inconclusive_count": inconclusive,
                 "mean_completion_time_ms": round(statistics.mean(completion_times), 1) if completion_times else 0,
+                "mean_trial_runtime_ms": round(statistics.mean(runtimes), 1) if runtimes else 0,
                 "mean_peak_score": round(statistics.mean(peak_scores), 1) if peak_scores else 0,
+                "mean_peak_wait_ms": round(statistics.mean(peak_waits), 1) if peak_waits else 0,
                 "mean_avg_wait_ms": round(statistics.mean(avg_waits), 1) if avg_waits else 0,
                 "mean_warning_lead_time_ms": round(statistics.mean(leads), 1) if leads else None,
                 "mean_detection_latency_ms": round(statistics.mean(latencies), 1) if latencies else None,
@@ -218,7 +229,8 @@ class ExperimentComparator:
             f"with an average warning lead time of {vuln_summary['mean_warning_lead_time_ms'] or 'N/A'} ms. "
             f"Protected mode achieved a {prot_summary['completion_rate_percent']}% completion rate "
             f"({prot_summary['completion_count']}/{prot_summary['total_trials']} trials completed successfully) "
-            f"with 0 observed deadlocks (observed experimentally under common lock ordering A -> B)."
+            f"with {prot_summary['deadlock_count']} observed deadlocks and "
+            f"{prot_summary['inconclusive_count']} inconclusive trials under common lock ordering A -> B."
         )
 
         return {

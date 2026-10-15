@@ -40,15 +40,18 @@ def get_scoring_config() -> Dict[str, Any]:
 
 @router.put("/config", summary="Update threat scoring weights and thresholds")
 def update_scoring_config(req: ScoreConfigRequest) -> Dict[str, Any]:
-    shared_scorer.update_config(
-        w_blocked=req.w_blocked,
-        w_wait=req.w_wait,
-        w_contention=req.w_contention,
-        w_resource=req.w_resource,
-        threshold_high=req.threshold_high,
-        threshold_low=req.threshold_low,
-        max_wait_ms=req.max_wait_ms,
-    )
+    try:
+        shared_scorer.update_config(
+            w_blocked=req.w_blocked,
+            w_wait=req.w_wait,
+            w_contention=req.w_contention,
+            w_resource=req.w_resource,
+            threshold_high=req.threshold_high,
+            threshold_low=req.threshold_low,
+            max_wait_ms=req.max_wait_ms,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         "status": "updated",
         "config": shared_scorer.config.to_dict(),

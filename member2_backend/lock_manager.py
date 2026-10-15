@@ -126,21 +126,18 @@ class LockManager:
             if current_owner != thread_id:
                 return False
             del self._owners[resource_id]
-
-        try:
+            # Keep the release and its event ordered before another worker can
+            # record an acquisition of the same lock.
             lock.release()
-        except RuntimeError:
-            pass  # Lock was not acquired
-
-        self.logger.log_event(
-            thread=thread_id,
-            action="released",
-            resource=resource_id,
-            owner=None,
-            wait_ms=0,
-            title=f"{thread_id} releases lock {resource_id}",
-            detail=f"Lock {resource_id} released and now available.",
-        )
+            self.logger.log_event(
+                thread=thread_id,
+                action="released",
+                resource=resource_id,
+                owner=None,
+                wait_ms=0,
+                title=f"{thread_id} releases lock {resource_id}",
+                detail=f"Lock {resource_id} released and now available.",
+            )
         return True
 
     def detect_deadlock_cycle(self) -> Optional[List[str]]:

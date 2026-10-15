@@ -15,6 +15,8 @@ from .config import API_HOST, API_PORT, DEFAULT_OVERALL_TIMEOUT_SECONDS
 from .experiment_runner import run_experiment, to_trial_v1
 from .schemas import ExperimentResult, RunExperimentRequest
 
+analysis_scorer = None
+
 app = FastAPI(
     title="Predictive Deadlock Lab — Experiment Backend",
     description="Multithreaded trial execution engine for Operating Systems case study.",
@@ -98,7 +100,7 @@ def run_trial_v1_post(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return to_trial_v1(result)
+    return _convert_trial_response(result)
 
 
 @app.get(
@@ -115,7 +117,23 @@ def run_trial_v1_get(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return to_trial_v1(result)
+    return _convert_trial_response(result)
+
+
+def _convert_trial_response(result: ExperimentResult) -> Dict[str, Any]:
+    if result.status not in ("deadlock", "completed"):
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT if result.status == "timeout"
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.error or "Experiment did not reach a valid terminal outcome.",
+        )
+    try:
+        return to_trial_v1(result, scorer=analysis_scorer)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid experiment event stream: {exc}",
+        ) from exc
 
 
 # Include Member 3 Analysis & Forecasting API router
@@ -125,7 +143,8 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 try:
-    from member3_analysis.api_routes import router as analysis_router
+    from member3_analysis.api_routes import router as analysis_router, shared_scorer
+    analysis_scorer = shared_scorer
     app.include_router(analysis_router)
 except Exception as e:
     print(f"Warning: Member 3 analysis router could not be loaded: {e}")

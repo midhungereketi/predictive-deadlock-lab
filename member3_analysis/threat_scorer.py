@@ -31,6 +31,7 @@ class ThreatScoreConfig:
     # Risk thresholds
     threshold_low: int = 40       # Score < 40 is LOW RISK
     threshold_high: int = 70      # Score >= 70 is HIGH RISK / EARLY WARNING
+    inversion_warning_floor: int = 72  # Controlled two-lock structural warning
 
     # Resource criticality weights (documented limitation: homogeneous locks in case study)
     criticality: Dict[str, float] = field(default_factory=lambda: {"A": 1.0, "B": 1.0})
@@ -51,6 +52,7 @@ class ThreatScoreConfig:
             "thresholds": {
                 "low": self.threshold_low,
                 "high": self.threshold_high,
+                "inversion_warning_floor": self.inversion_warning_floor,
             },
             "criticality": dict(self.criticality),
             "formula_documentation": (
@@ -63,7 +65,10 @@ class ThreatScoreConfig:
                 "Risk Classification:\n"
                 "  0 - 39: LOW RISK (Calm, normal concurrency)\n"
                 "  40 - 69: ELEVATED RISK (Moderate contention observed)\n"
-                "  70 - 100: HIGH RISK (Early warning triggered before circular wait)"
+                "  70 - 100: HIGH RISK (Early warning triggered before circular wait)\n"
+                "Controlled-scenario rule: if distinct threads hold A and B and one waits\n"
+                "for the other's lock, raise the score to at least 72. This is a risk\n"
+                "forecast, not proof of a cycle."
             ),
         }
 
@@ -129,18 +134,22 @@ class ThreatScorer:
         max_wait_ms: Optional[int] = None,
     ) -> None:
         """Update scoring configuration weights and thresholds."""
-        if w_blocked is not None:
-            self.config.w_blocked = max(0.0, float(w_blocked))
-        if w_wait is not None:
-            self.config.w_wait = max(0.0, float(w_wait))
-        if w_contention is not None:
-            self.config.w_contention = max(0.0, float(w_contention))
-        if w_resource is not None:
-            self.config.w_resource = max(0.0, float(w_resource))
-        if threshold_high is not None:
-            self.config.threshold_high = max(1, min(100, int(threshold_high)))
-        if threshold_low is not None:
-            self.config.threshold_low = max(0, min(self.config.threshold_high - 1, int(threshold_low)))
+        weights = (
+            self.config.w_blocked if w_blocked is None else float(w_blocked),
+            self.config.w_wait if w_wait is None else float(w_wait),
+            self.config.w_contention if w_contention is None else float(w_contention),
+            self.config.w_resource if w_resource is None else float(w_resource),
+        )
+        if any(weight < 0 or weight > 1 for weight in weights) or abs(sum(weights) - 1.0) > 0.001:
+            raise ValueError("Scoring weights must each be 0–1 and add up to 1.00.")
+        next_high = self.config.threshold_high if threshold_high is None else int(threshold_high)
+        next_low = self.config.threshold_low if threshold_low is None else int(threshold_low)
+        if not 0 <= next_low < next_high <= 100:
+            raise ValueError("Low threshold must be below high threshold.")
+        (self.config.w_blocked, self.config.w_wait,
+         self.config.w_contention, self.config.w_resource) = weights
+        self.config.threshold_high = next_high
+        self.config.threshold_low = next_low
         if max_wait_ms is not None:
             self.config.max_wait_ms = max(50, int(max_wait_ms))
 
@@ -199,6 +208,8 @@ class ThreatScorer:
 
         raw_sum = pts_blocked + pts_wait + pts_contention + pts_resource
         score = int(round(max(0.0, min(100.0, raw_sum))))
+        if not has_cycle and held_locks >= 2 and held_distinct >= 2 and blocked_count >= 1:
+            score = max(score, self.config.inversion_warning_floor)
 
         # Determine risk classification
         is_early_warning = score >= self.config.threshold_high and not has_cycle

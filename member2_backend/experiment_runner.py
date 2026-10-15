@@ -74,40 +74,43 @@ def run_experiment(
             error=f"Internal experiment error: {str(exc)}",
         )
 
+def to_trial_v1(result: ExperimentResult, scorer=None) -> Dict[str, Any]:
+    """Convert observed raw events to the frontend's version 1 trial format.
 
-def to_trial_v1(result: ExperimentResult) -> Dict[str, Any]:
-    """Convert an ExperimentResult into Member 1's trial-v1 JSON contract.
-
-    Guarantees strict compliance with:
-        - frontend/contract/trial-v1.schema.json
-        - frontend/trial-data.js validation rules
+    A failed or timed-out experiment cannot be represented as a successful
+    frontend trial. A deadlock must be supported by the observed wait-for graph;
+    no ownership, wait, timing, or contention values are manufactured here.
     """
-    mode = result.mode
-    status = "deadlock" if result.deadlock_detected else "completed"
+    from member3_analysis.graph import WaitForGraph
+    from member3_analysis.threat_scorer import ThreatScorer
+    from .schemas import TrialV1Output
 
-    v1_events: List[Dict[str, Any]] = []
-    current_owners: Dict[str, str] = {}
-    current_waits: Dict[str, str] = {}
+    if result.mode not in ("vulnerable", "protected"):
+        raise ValueError("Unsupported trial mode.")
+    if result.status not in ("deadlock", "completed"):
+        raise ValueError(f"Cannot display {result.status} experiment as a completed trial.")
+    if result.deadlock_detected != (result.status == "deadlock"):
+        raise ValueError("Experiment status and deadlock flag disagree.")
+
+    graph = WaitForGraph()
+    scorer = scorer or ThreatScorer()
+    active_wait_since: Dict[str, int] = {}
+    peak_wait_ms = 0
     contention_count = 0
-    longest_wait = 0
+    last_ts_ms = 0
+    terminal_seen = False
 
-    # Ensure start event at 0ms
-    v1_events.append({
+    events: List[Dict[str, Any]] = [{
         "timestamp_ms": 0,
         "thread_id": "system",
         "action": "start",
-        "resource_id": None,
         "owners": {},
         "waits": {},
-        "risk_score": 8,
+        "risk_score": 0,
         "wait_duration_ms": 0,
         "contention_count": 0,
-        "title": "Trial started",
-        "detail": f"Real multithreaded {mode} trial initialized.",
-    })
-
+    }]
     action_map = {
-        "start": "start",
         "requested": "request",
         "waiting": "wait",
         "acquired": "acquire",
@@ -118,162 +121,85 @@ def to_trial_v1(result: ExperimentResult) -> Dict[str, Any]:
         "complete": "complete",
     }
 
-    last_ts_ms = 0
-
-    for ev in result.events:
-        if ev.action == "start":
+    for raw in result.events:
+        if raw.action == "start":
             continue
+        if raw.action == "timeout":
+            raise ValueError("A timeout occurred before a valid terminal result.")
+        action = action_map.get(raw.action)
+        if action is None:
+            raise ValueError(f"Unsupported raw action: {raw.action}")
+        if raw.thread not in ("T1", "T2", "system"):
+            raise ValueError(f"Unsupported thread: {raw.thread}")
+        if raw.resource is not None and raw.resource not in ("A", "B"):
+            raise ValueError(f"Unsupported resource: {raw.resource}")
 
-        raw_action = ev.action
-        if raw_action == "timeout":
-            continue
-
-        v1_action = action_map.get(raw_action)
-        if not v1_action:
-            continue
-
-        # Timestamps must be non-decreasing integers
-        ts_ms = max(last_ts_ms, int(ev.time * 1000))
+        ts_ms = max(last_ts_ms, int(round(raw.time * 1000)))
         last_ts_ms = ts_ms
+        previous_wait = graph.waits.get(raw.thread)
+        snapshot = graph.process_raw_event(raw.model_dump())
+        owners = snapshot["owners"]
+        waits = snapshot["waits"]
 
-        res_id = ev.resource if ev.resource in ("A", "B") else None
+        for thread, resource in waits.items():
+            if owners.get(resource) not in ("T1", "T2") or owners[resource] == thread:
+                raise ValueError("Raw events contain a wait without another lock owner.")
 
-        # Maintain state invariants required by trial-data.js:
-        # Every wait must point to a lock currently held by the other thread.
-        if v1_action == "acquire" and res_id:
-            current_owners[res_id] = ev.thread
-            if ev.thread in current_waits and current_waits[ev.thread] == res_id:
-                del current_waits[ev.thread]
-        elif v1_action == "release" and res_id:
-            if current_owners.get(res_id) == ev.thread:
-                del current_owners[res_id]
-            # Clear any waiting entries targeting the released lock
-            for w_thread, w_res in list(current_waits.items()):
-                if w_res == res_id:
-                    del current_waits[w_thread]
-        elif v1_action == "wait" and res_id:
-            target_owner = current_owners.get(res_id)
-            if target_owner and target_owner != ev.thread:
-                current_waits[ev.thread] = res_id
-                contention_count += 1
-            else:
-                # Cannot wait for an unowned lock under the schema
-                continue
-        elif v1_action == "deadlock_detected":
-            current_owners = {"A": "T1", "B": "T2"}
-            current_waits = {"T1": "B", "T2": "A"}
-        elif v1_action == "complete":
-            current_owners.clear()
-            current_waits.clear()
+        if action == "wait" and previous_wait != raw.resource:
+            if raw.thread not in waits:
+                raise ValueError("A wait event has no observed lock dependency.")
+            contention_count += 1
 
-        if ev.wait_ms > longest_wait:
-            longest_wait = ev.wait_ms
+        for thread, started_at in list(active_wait_since.items()):
+            peak_wait_ms = max(peak_wait_ms, ts_ms - started_at)
+            if thread not in waits:
+                del active_wait_since[thread]
+        for thread in waits:
+            active_wait_since.setdefault(thread, ts_ms)
+        peak_wait_ms = max(peak_wait_ms, raw.wait_ms)
 
-        # Compute heuristic risk score
-        if v1_action == "deadlock_detected":
-            score = 96
-        elif v1_action == "complete":
-            score = 6
-        elif v1_action == "policy_applied":
-            score = 14
-        else:
-            base = 10
-            if len(current_owners) == 1:
-                base += 8
-            elif len(current_owners) >= 2:
-                base += 25
-            if len(current_waits) == 1:
-                base += 38
-            elif len(current_waits) >= 2:
-                base += 60
-            score = min(base + contention_count * 4, 100)
+        if action == "deadlock_detected":
+            if result.status != "deadlock" or not snapshot["has_cycle"]:
+                raise ValueError("Deadlock notification lacks an observed Wait-For Graph cycle.")
+            terminal_seen = True
+        elif action == "complete":
+            if result.status != "completed" or owners or waits or result.metrics.threads_completed != 2:
+                raise ValueError("Completion event does not match two finished, unlocked threads.")
+            terminal_seen = True
 
-        # Title and detail (only set if non-empty string to conform to trial-v1 schema)
-        title = None
-        detail = None
-        if v1_action == "deadlock_detected":
-            title = "Deadlock detected"
-            detail = "Circular wait confirmed: T1 -> T2 -> T1."
-        elif v1_action == "complete":
-            title = "Trial completed"
-            detail = "All threads completed successfully without circular wait."
-        elif v1_action == "policy_applied":
-            title = "Common lock order applied"
-            detail = "Thread lock acquisitions normalized to canonical order A -> B."
-
-        entry = {
+        score = scorer.evaluate(
+            num_blocked=len(waits),
+            wait_duration_ms=peak_wait_ms,
+            contention_count=contention_count,
+            owners=owners,
+            waits=waits,
+            has_cycle=snapshot["has_cycle"],
+        ).score
+        event: Dict[str, Any] = {
             "timestamp_ms": ts_ms,
-            "thread_id": ev.thread if ev.thread in ("T1", "T2", "system") else "system",
-            "action": v1_action,
-            "resource_id": res_id,
-            "owners": dict(current_owners),
-            "waits": dict(current_waits),
+            "thread_id": raw.thread,
+            "action": action,
+            "owners": dict(owners),
+            "waits": dict(waits),
             "risk_score": score,
-            "wait_duration_ms": longest_wait,
+            "wait_duration_ms": peak_wait_ms,
             "contention_count": contention_count,
         }
-        if title:
-            entry["title"] = title
-        if detail:
-            entry["detail"] = detail
-
-        v1_events.append(entry)
-
-        # If a terminal event was recorded, stop adding subsequent cleanup events
-        if v1_action in ("deadlock_detected", "complete"):
+        if raw.resource is not None:
+            event["resource_id"] = raw.resource
+        events.append(event)
+        if terminal_seen:
             break
 
-    # Terminal event integrity
-    if status == "deadlock":
-        # Must end with deadlock_detected and confirmed cycle:
-        # owners: {A: T1, B: T2}, waits: {T1: B, T2: A}
-        deadlock_owners = {"A": "T1", "B": "T2"}
-        deadlock_waits = {"T1": "B", "T2": "A"}
-        final_ts = max(last_ts_ms + 100, 1000)
+    if not terminal_seen:
+        raise ValueError("Experiment has no observed terminal deadlock or completion event.")
 
-        if not v1_events or v1_events[-1]["action"] != "deadlock_detected":
-            v1_events.append({
-                "timestamp_ms": final_ts,
-                "thread_id": "system",
-                "action": "deadlock_detected",
-                "resource_id": None,
-                "owners": deadlock_owners,
-                "waits": deadlock_waits,
-                "risk_score": 96,
-                "wait_duration_ms": max(longest_wait, 600),
-                "contention_count": max(contention_count, 4),
-                "title": "Deadlock detected",
-                "detail": "Circular wait confirmed by the Wait-For Graph.",
-            })
-        else:
-            # Ensure final state has owners & waits for the cycle
-            v1_events[-1]["owners"] = deadlock_owners
-            v1_events[-1]["waits"] = deadlock_waits
-    elif status == "completed":
-        # Must end with complete and empty owners and waits
-        final_ts = max(last_ts_ms + 100, 1200)
-        if not v1_events or v1_events[-1]["action"] != "complete":
-            v1_events.append({
-                "timestamp_ms": final_ts,
-                "thread_id": "system",
-                "action": "complete",
-                "resource_id": None,
-                "owners": {},
-                "waits": {},
-                "risk_score": 6,
-                "wait_duration_ms": longest_wait,
-                "contention_count": contention_count,
-                "title": "Trial completed",
-                "detail": "Both threads finished without a circular wait.",
-            })
-        else:
-            v1_events[-1]["owners"] = {}
-            v1_events[-1]["waits"] = {}
-
-    return {
+    payload = {
         "schema_version": 1,
         "run_id": result.trial_id,
-        "mode": mode,
-        "status": status,
-        "events": v1_events,
+        "mode": result.mode,
+        "status": result.status,
+        "events": events,
     }
+    TrialV1Output.model_validate(payload)
+    return payload

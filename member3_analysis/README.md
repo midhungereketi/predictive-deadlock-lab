@@ -24,13 +24,15 @@ Member 3 implements the analytical intelligence and statistical evaluation layer
 ### Transparent Normalization Formula
 $$\text{ThreatScore}(t) = \min\left(100, \max\left(0, \text{round}\left(w_b \cdot B_{\text{norm}}(t) + w_w \cdot W_{\text{norm}}(t) + w_c \cdot C_{\text{norm}}(t) + w_r \cdot R_{\text{norm}}(t)\right)\right)\right)$$
 
+In this controlled two-lock experiment, one additional **structural warning rule** applies: if A and B are held by different threads and one thread is already waiting for the other's lock, the pre-cycle score is raised to at least 72. This is a risk forecast, not a confirmed deadlock. A cycle is the only deadlock proof. Configured weights must sum to 1.00.
+
 ### Input Normalizations
 | Observable | Variable | Ceiling | Normalization Formula | Description |
 |---|---|---|---|---|
 | Blocked Threads | $B_{\text{norm}}$ | $N_{\text{max}} = 2$ | $\min(100, \frac{N_{\text{blocked}}}{2} \times 100)$ | Fraction of worker threads currently blocked waiting for a lock. |
 | Wait Duration | $W_{\text{norm}}$ | $T_{\text{max}} = 800\text{ ms}$ | $\min(100, \frac{\text{wait\_duration\_ms}}{800} \times 100)$ | Current longest wait duration relative to saturation horizon. |
 | Contention Events | $C_{\text{norm}}$ | $C_{\text{max}} = 5$ | $\min(100, \frac{\text{conflict\_count}}{5} \times 100)$ | Cumulative conflict intensity observed across resource requests. |
-| Lock Inversion / Conflict | $R_{\text{norm}}$ | $100\%$ | $100\%$ if both locks held by distinct threads; $30\%$ if 1 lock held; $0\%$ otherwise | Risk index for conflicting resource ownership paths. |
+| Lock Inversion / Conflict | $R_{\text{norm}}$ | $100\%$ | $100\%$ if both locks held by distinct threads; $40\%$ if both held by one thread; $20\%$ if one lock held; $0\%$ otherwise | Risk index for conflicting resource ownership paths. |
 
 ### Configurable Weights & Thresholds
 - **$w_b = 0.35$** (35% weight on blocked thread ratio)
@@ -79,19 +81,19 @@ Tracks real, observed execution data without hardcoded values:
 
 File: `member3_analysis/comparator.py`
 
-Executes repeated trials ($N=5$) on real OS threads via `member2_backend.experiment_runner.run_experiment`:
+Executes repeated trials (default $N=5$ per mode) on real threads via `member2_backend.experiment_runner.run_experiment`. Run the endpoint to obtain the values for the current machine and run; the table below defines what is measured and does not assert fixed outcomes:
 
 | Metric | Vulnerable Mode (Opposite Orders) | Protected Mode (Canonical Order $A \rightarrow B$) |
 |---|---|---|
 | **Lock Ordering** | $T_1: A \rightarrow B$, $T_2: B \rightarrow A$ | $T_1: A \rightarrow B$, $T_2: A \rightarrow B$ |
-| **Deadlock Rate** | **100.0%** ($5/5$ trials deadlocked) | **0.0%** ($0/5$ deadlocks observed) |
-| **Completion Rate** | **0.0%** ($0/5$ completed) | **100.0%** ($5/5$ completed successfully) |
-| **Mean Warning Lead Time** | **~400 ms** before cycle | **N/A** (no deadlock formed) |
-| **Detection Latency** | **~45 ms** | **N/A** (no cycle to detect) |
-| **Peak Threat Score** | **96 / 100** | **~35 / 100** |
+| **Deadlock Rate** | Cycle-confirmed trials ÷ trials run | Cycle-confirmed trials ÷ trials run |
+| **Completion Rate** | Completed trials ÷ trials run | Completed trials ÷ trials run |
+| **Mean Warning Lead Time** | First score crossing before cycle, measured from event timestamps | N/A if no cycle forms |
+| **Detection Latency** | `deadlock_detected` event time minus first cycle event time | N/A if no cycle forms |
+| **Peak Threat Score** | Maximum of time-local trial scores | Maximum of time-local trial scores |
 | **Coffman Condition 4** | Circular wait confirmed | Circular wait eliminated |
 
-> **Experimental Note:** 0 observed deadlocks in protected mode is reported as an empirical observation under controlled canonical ordering. While total ordering provably prevents circular wait for single-instance mutexes, complex production systems must manage lock hierarchy discipline across deep call stacks.
+> **Experimental Note:** A 120 ms staged observation window makes the warning lead time measurable in the vulnerable teaching scenario. It is part of the controlled schedule and does not establish predictive performance under arbitrary scheduling. The trial runner uses bounded waits in one Python process, not a separately isolated worker process.
 
 ---
 

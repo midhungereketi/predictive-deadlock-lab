@@ -106,20 +106,20 @@ def run_protected_experiment(
     total_time_ms = int((time.monotonic() - start_mono) * 1000)
     cycle = lock_mgr.detect_deadlock_cycle()
 
-    # Log terminal completion event
-    logger.log_event(
-        thread="system",
-        action="complete",
-        resource=None,
-        owner=None,
-        wait_ms=0,
-        title="Protected experiment complete",
-        detail="Both threads finished their critical sections without circular wait.",
-    )
-
     metrics_raw = logger.get_metrics_summary()
     completed_threads = (1 if t1_status["completed"] else 0) + (1 if t2_status["completed"] else 0)
     timed_out_threads = (1 if t1_status["timed_out"] else 0) + (1 if t2_status["timed_out"] else 0)
+
+    if completed_threads == 2 and not t1.is_alive() and not t2.is_alive():
+        logger.log_event(
+            thread="system",
+            action="complete",
+            resource=None,
+            owner=None,
+            wait_ms=0,
+            title="Protected experiment complete",
+            detail="Both threads finished their critical sections without circular wait.",
+        )
 
     metrics = ExperimentMetrics(
         threads_started=2,
@@ -135,10 +135,15 @@ def run_protected_experiment(
     return ExperimentResult(
         trial_id=trial_id,
         mode="protected",
-        status="completed" if completed_threads == 2 else "error",
+        status="completed" if completed_threads == 2 and not t1.is_alive() and not t2.is_alive() else (
+            "timeout" if timed_out_threads or t1.is_alive() or t2.is_alive() else "error"
+        ),
         deadlock_detected=False,
         completion_time_ms=total_time_ms,
         events=logger.get_events(),
         metrics=metrics,
-        error=t1_status.get("error") or t2_status.get("error"),
+        error=t1_status.get("error") or t2_status.get("error") or (
+            None if completed_threads == 2 and not t1.is_alive() and not t2.is_alive()
+            else "Protected trial did not complete both threads."
+        ),
     )

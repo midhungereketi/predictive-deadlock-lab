@@ -51,14 +51,14 @@ In vulnerable mode, two worker threads compete for two shared mutex resources wi
 - **Thread T2:** Attempts to acquire **Lock B**, then **Lock A**.
 
 ### Synchronization & Repeatability Mechanism
-To eliminate race conditions and avoid relying on arbitrary `sleep()` durations:
+To make the circular wait reproducible, the runner uses a barrier and a controlled 120 ms observation interval:
 1. **Barrier Synchronization (`threading.Barrier(2)`):** 
    - T1 acquires Lock A.
    - T2 acquires Lock B.
    - Both threads wait on the barrier. This guarantees that T1 holds Lock A and T2 holds Lock B before either thread requests its second lock.
 2. **Conflicting Acquisition:**
    - T1 attempts to acquire Lock B (currently held by T2).
-   - T2 attempts to acquire Lock A (currently held by T1).
+   - Once T1's wait is observed, T2 requests Lock A after the observation interval. This permits a measurable warning before a cycle forms.
 3. **Confirmed Circular Wait:**
    - Active supervisor monitor inspects the Wait-For Graph:
      - $T_1 \rightarrow T_2$ ($T_1$ waits for Lock B held by $T_2$)
@@ -70,6 +70,8 @@ To eliminate race conditions and avoid relying on arbitrary `sleep()` durations:
    - When the timeout expires, each thread gracefully releases its held lock (`T1` releases `A`, `T2` releases `B`).
    - Both threads join and terminate cleanly.
    - **No threads are left blocked in the background.**
+
+The current runner bounds lock waits within the API process. It does not launch each trial in a separate OS process; process isolation remains a possible hardening step.
 
 ---
 

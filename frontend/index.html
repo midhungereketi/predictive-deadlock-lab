@@ -76,7 +76,7 @@
               <div class="metric-heading">THREAT SCORE <span class="metric-glyph">⌁</span></div>
               <div class="metric-value"><span id="metric-score">08</span><small>/ 100</small></div>
               <div class="metric-foot"><span id="risk-chip" class="chip chip-calm">LOW RISK</span><span>heuristic estimate</span></div>
-              <div class="factor-mini" id="metric-factors" title="Transparent Threat Score Breakdown: Blocked (35%), Wait (30%), Contention (20%), Lock Order (15%)">
+              <div class="factor-mini" id="metric-factors" title="Observed inputs to the threat score; a structural risk rule can raise the final score.">
                 <span class="f-item" id="f-blocked">B: 0%</span>
                 <span class="f-item" id="f-wait">W: 0%</span>
                 <span class="f-item" id="f-cont">C: 0%</span>
@@ -131,7 +131,7 @@
         </section>
 
         <section id="view-analysis" class="view" aria-labelledby="analysis-title">
-          <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> LIVE TELEMETRY <span class="eyebrow-num">/ 02</span></div><h1 id="analysis-title">Where contention <em>builds.</em></h1><p>Track the signals behind the warning. Every value here comes from the current browser demonstration.</p></div>
+          <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> TRIAL ANALYSIS <span class="eyebrow-num">/ 02</span></div><h1 id="analysis-title">Where contention <em>builds.</em></h1><p>Track the signals behind the warning in the current demo, imported file, or local backend trial.</p></div>
           <div class="analysis-grid"><article class="panel analysis-card wide"><div class="panel-head"><div><div class="overline">TREND & FORECAST</div><h2>Current risk trajectory</h2></div><div style="display:flex;gap:6px;"><span id="analysis-lead-badge" class="outline-badge" style="display:none;">LEAD: -- ms</span><span id="analysis-status" class="outline-badge">IDLE</span></div></div><div id="analysis-bars" class="analysis-bars"></div><p class="analysis-help">The score combines lock-order inversion, blocked threads, waiting time, and resource contention. It is an illustrative heuristic, not a guarantee.</p></article><article class="panel analysis-card"><div class="panel-head"><div><div class="overline">LOCK OWNERSHIP</div><h2>Resource state</h2></div></div><div class="resource-state"><div><span><i class="res-square res-a"></i> Resource A</span><b id="analysis-owner-a">FREE</b></div><div><span><i class="res-square res-b"></i> Resource B</span><b id="analysis-owner-b">FREE</b></div></div><div class="analysis-divider"></div><p id="analysis-waits">No thread is waiting for a resource.</p></article><article class="panel analysis-card"><div class="panel-head"><div><div class="overline">ORDER TRACKER</div><h2>Acquisition paths</h2></div></div><div class="path-card"><span>THREAD 01</span><strong>A <i>→</i> B</strong></div><div class="path-card"><span>THREAD 02</span><strong id="analysis-t2-path">B <i>→</i> A</strong></div><p id="analysis-order-note" class="analysis-help">Opposite orders create a possible circular wait.</p></article>
           <!-- Member 3: Configurable Threat Scoring Formula and Sensitivity Panel -->
           <article class="panel analysis-card wide">
@@ -213,7 +213,7 @@
               </div>
               <div class="batch-stat-card">
                 <h3>Scientific Observation & Coffman Invariant</h3>
-                <p id="batch-insight-desc">Executing repeated trials confirms that unordered opposite lock acquisitions systematically result in circular wait (Coffman condition 4). Conversely, applying global canonical lock ordering (A → B) reliably eliminates circular wait, achieving a 100% completion rate across all trials.</p>
+                <p id="batch-insight-desc">Measured results appear here after the batch finishes.</p>
               </div>
             </div>
 
@@ -225,7 +225,7 @@
           <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> METHOD & DEFINITIONS <span class="eyebrow-num">/ 04</span></div><h1 id="method-title">Understand the <em>mechanism.</em></h1><p>A short guide to the operating systems concepts shown in the dashboard.</p></div>
           <div class="method-grid"><article class="panel method-card"><span class="method-num">01 / DETECT</span><div class="method-icon">↗</div><h2>Wait-For Graph</h2><p>A node is a thread. An arrow T1 → T2 means T1 waits for a lock currently held by T2. In the two-thread, single-instance-lock demo, T1 → T2 → T1 confirms a deadlock.</p></article><article class="panel method-card"><span class="method-num">02 / WARN</span><div class="method-icon">⌁</div><h2>Contention score</h2><p>Opposite lock order, blocked threads, and longer waits increase the displayed threat score. Crossing the threshold produces an early warning, which is an estimate rather than proof of deadlock.</p></article><article class="panel method-card"><span class="method-num">03 / PREVENT</span><div class="method-icon">⇥</div><h2>Common lock order</h2><p>In protected mode, every thread chooses A → B before it acquires its first lock. A shared total order prevents circular wait in this scenario. Reordering after a thread already holds a lock would be too late.</p></article></div>
           <div class="method-flow panel"><div class="overline">THE DEMONSTRATION</div><div class="flow-steps"><div><b>01</b><span>Choose mode</span></div><i>→</i><div><b>02</b><span>Run or step</span></div><i>→</i><div><b>03</b><span>Watch graph & score</span></div><i>→</i><div><b>04</b><span>Compare outcomes</span></div></div></div>
-          <div class="method-disclaimer">CURRENT STAGE <strong>Frontend demonstration</strong><p>Scenario events are generated in the browser. The future backend should run actual threads, record timestamped lock events, isolate deadlocked trials, and provide data to these same views.</p></div>
+          <div class="method-disclaimer">CURRENT STAGE <strong>Demo and local real-thread trials</strong><p>The built-in scenarios are browser demonstrations. When served by the local FastAPI backend, the live button runs bounded Python-thread experiments and loads their recorded events. The hosted static preview has no backend.</p></div>
         </section>
       </div>
       <footer class="footer"><span>© PREDICTIVE DEADLOCK LAB</span><span>DESIGNED & INITIALIZED BY MIDHUN GEREKETI · TEAM CASE STUDY</span><span>DEMO / V1.0</span></footer>

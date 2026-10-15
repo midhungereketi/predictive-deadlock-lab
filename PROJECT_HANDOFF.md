@@ -1,5 +1,7 @@
 # Predictive Deadlock Lab — project handoff
 
+> Historical snapshot from 10 October 2026. For the current integrated implementation and run instructions, see the root README. Backend and analysis code were added after this handoff.
+
 **Status as of 10 October 2026**  
 **Owner / first team member:** Midhun Gereketi  
 **GitHub repository:** https://github.com/midhungereketi/predictive-deadlock-lab  

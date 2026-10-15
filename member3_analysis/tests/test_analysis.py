@@ -215,6 +215,30 @@ class TestExperimentalComparison(unittest.TestCase):
         self.assertIn("insight", comp)
         self.assertIn("scientific_disclaimer", comp)
 
+    def test_detection_latency_comes_from_events_and_cycle_survives_cleanup(self) -> None:
+        events = [
+            {"time": 0.0, "thread": "system", "action": "start", "resource": None},
+            {"time": 0.01, "thread": "T1", "action": "acquired", "resource": "A"},
+            {"time": 0.02, "thread": "T2", "action": "acquired", "resource": "B"},
+            {"time": 0.10, "thread": "T1", "action": "waiting", "resource": "B", "owner": "T2"},
+            {"time": 0.15, "thread": "T2", "action": "waiting", "resource": "A", "owner": "T1"},
+            {"time": 0.18, "thread": "system", "action": "deadlock_detected", "resource": None},
+            {"time": 0.80, "thread": "T1", "action": "released", "resource": "A"},
+            {"time": 0.81, "thread": "T2", "action": "released", "resource": "B"},
+        ]
+        result = analyze_trial_events(events)
+        self.assertTrue(result["has_cycle"])
+        self.assertEqual(result["cycles"], [["T1", "T2", "T1"]])
+        self.assertEqual(result["cycle_detected_ms"], 150)
+        self.assertEqual(result["detection_latency_ms"], 30)
+
+        false_notification = analyze_trial_events([
+            {"time": 0.0, "thread": "system", "action": "start", "resource": None},
+            {"time": 0.1, "thread": "system", "action": "deadlock_detected", "resource": None},
+        ])
+        self.assertFalse(false_notification["has_cycle"])
+        self.assertIsNone(false_notification["detection_latency_ms"])
+
 
 if __name__ == "__main__":
     unittest.main()
