@@ -375,6 +375,54 @@ els.trialFile.addEventListener("change", async () => {
     els.trialFile.value = "";
   }
 });
-window.DeadlockLab = { loadTrial, restoreDemo };
+
+let isRunningLive = false;
+async function runLiveTrial(targetMode = mode) {
+  if (isRunningLive) return;
+  isRunningLive = true;
+  const liveBtn = document.getElementById("live-run-button");
+  if (liveBtn) {
+    liveBtn.disabled = true;
+    liveBtn.textContent = "⏳ Running OS threads...";
+  }
+  showImportFeedback("Connecting to Member 2 backend: executing multithreaded " + targetMode + " trial...", true);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch("/api/trials/" + encodeURIComponent(targetMode), {
+      method: "POST",
+      signal: controller.signal
+    });
+    window.clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => null);
+      throw new Error((errData && errData.detail) || ("Backend returned status " + resp.status));
+    }
+
+    const trialData = await resp.json();
+    loadTrial(trialData);
+    showImportFeedback("Loaded real thread trial " + trialData.run_id + " from Member 2 backend. " + (trialData.status === "deadlock" ? "Circular wait confirmed!" : "Protected run complete!"), true);
+  } catch (err) {
+    const msg = err.name === "AbortError"
+      ? "Experiment request timed out after 8s."
+      : "Could not reach Member 2 backend at /api/trials/" + targetMode + " (" + err.message + "). Ensure backend server is running via `python -m member2_backend.api` or use demo mode.";
+    showImportFeedback(msg, false);
+  } finally {
+    isRunningLive = false;
+    if (liveBtn) {
+      liveBtn.disabled = false;
+      liveBtn.textContent = "⚡ Run live backend trial";
+    }
+  }
+}
+
+const liveRunBtn = document.getElementById("live-run-button");
+if (liveRunBtn) {
+  liveRunBtn.addEventListener("click", () => runLiveTrial(mode));
+}
+
+window.DeadlockLab = { loadTrial, restoreDemo, runLiveTrial };
 render();
 
