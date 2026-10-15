@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "run_id": "trial-vulnerable-20261016-013907-13765a",
+  "mode": "vulnerable",
+  "status": "deadlock",
+  "events": [
+    {
+      "timestamp_ms": 0,
+      "thread_id": "system",
+      "action": "start",
+      "owners": {},
+      "waits": {},
+      "risk_score": 0,
+      "wait_duration_ms": 0,
+      "contention_count": 0
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T1",
+      "action": "request",
+      "owners": {},
+      "waits": {},
+      "risk_score": 0,
+      "wait_duration_ms": 0,
+      "contention_count": 0,
+      "resource_id": "A"
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T1",
+      "action": "acquire",
+      "owners": {
+        "A": "T1"
+      },
+      "waits": {},
+      "risk_score": 3,
+      "wait_duration_ms": 0,
+      "contention_count": 0,
+      "resource_id": "A"
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T2",
+      "action": "request",
+      "owners": {
+        "A": "T1"
+      },
+      "waits": {},
+      "risk_score": 3,
+      "wait_duration_ms": 0,
+      "contention_count": 0,
+      "resource_id": "B"
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T2",
+      "action": "acquire",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {},
+      "risk_score": 15,
+      "wait_duration_ms": 0,
+      "contention_count": 0,
+      "resource_id": "B"
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T1",
+      "action": "request",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {},
+      "risk_score": 15,
+      "wait_duration_ms": 0,
+      "contention_count": 0,
+      "resource_id": "B"
+    },
+    {
+      "timestamp_ms": 0,
+      "thread_id": "T1",
+      "action": "wait",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {
+        "T1": "B"
+      },
+      "risk_score": 72,
+      "wait_duration_ms": 0,
+      "contention_count": 1,
+      "resource_id": "B"
+    },
+    {
+      "timestamp_ms": 125,
+      "thread_id": "T2",
+      "action": "request",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {
+        "T1": "B"
+      },
+      "risk_score": 72,
+      "wait_duration_ms": 125,
+      "contention_count": 1,
+      "resource_id": "A"
+    },
+    {
+      "timestamp_ms": 125,
+      "thread_id": "T2",
+      "action": "wait",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {
+        "T1": "B",
+        "T2": "A"
+      },
+      "risk_score": 96,
+      "wait_duration_ms": 125,
+      "contention_count": 2,
+      "resource_id": "A"
+    },
+    {
+      "timestamp_ms": 125,
+      "thread_id": "system",
+      "action": "deadlock_detected",
+      "owners": {
+        "A": "T1",
+        "B": "T2"
+      },
+      "waits": {
+        "T1": "B",
+        "T2": "A"
+      },
+      "risk_score": 96,
+      "wait_duration_ms": 125,
+      "contention_count": 2
+    }
+  ]
+}

@@ -4,7 +4,7 @@ An interactive browser demonstration for the Operating Systems case study **Pred
 
 ## Run locally
 
-Open `dist/index.html` in a browser, or serve `dist/` with any static HTTP server. No package installation or build step is required.
+Open `index.html` in a browser, or serve this `frontend/` directory with any static HTTP server. No package installation or build step is required for demo playback or JSON import. To run real trials, start the repository's FastAPI server as described in the root README and open its local URL.
 
 ## What works
 
@@ -14,11 +14,11 @@ Open `dist/index.html` in a browser, or serve `dist/` with any static HTTP serve
 - Side-by-side outcome comparison and CSV export derived from current trial data.
 - Responsive desktop and mobile layouts.
 
-The built-in scenarios are deterministic **demo data generated in the browser**. Imported trial JSON can display backend results, but this frontend does not itself run real threads or call a backend API yet.
+The built-in scenarios are deterministic **demo data generated in the browser**. The frontend can import trial JSON or call the local backend using **Run live backend trial**. The browser itself does not run OS threads. The separately hosted static preview has no Python backend.
 
 ## Backend handoff
 
-The future backend should run real threads in isolated trials and produce one versioned JSON file per trial. The frontend now has a validated importer, so the team can connect backend results without replacing the dashboard components. See [the trial contract](contract/README.md), [schema](contract/trial-v1.schema.json), and two example files.
+The backend runs bounded real-thread trials and returns versioned JSON through `/api/trials/{mode}`. The importer still accepts saved files. See [the trial contract](contract/README.md), [schema](contract/trial-v1.schema.json), and two example files. The current runner bounds lock waits within one Python process; it does not isolate each trial in a separate OS process.
 
 ```json
 {
@@ -42,7 +42,7 @@ The future backend should run real threads in isolated trials and produce one ve
 }
 ```
 
-The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend can write JSON and users can import it, or a future API client can fetch the same object and call `window.DeadlockLab.loadTrial(trial)`. The UI derives graph edges and comparison metrics from imported snapshots.
+The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend returns this format through the local API; users can also import saved JSON. The UI derives graph edges and comparison metrics from recorded snapshots.
 
 Run the contract checks with:
 
@@ -53,7 +53,7 @@ node --test tests/trial-data.test.js
 ## Team sequence
 
 1. **Midhun Gereketi:** frontend and event contract.
-2. **P. Satya Mani Shraavanth:** real-thread experiment, repeatable baseline, protected lock order, and isolated trial runner.
+2. **P. Satya Mani Shraavanth:** real-thread experiment, repeatable baseline, protected lock order, and bounded trial runner.
 3. **M. Lakshman Sai:** Wait-For Graph, contention metrics, scoring, heatmap, and comparison calculations.
 
 ## Important distinction

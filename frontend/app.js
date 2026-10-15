@@ -68,7 +68,50 @@ const els = {
   sourceDetail: document.getElementById("data-source-detail"),
   restoreButton: document.getElementById("restore-button"),
   importFeedback: document.getElementById("import-feedback"),
-  trialFile: document.getElementById("trial-file")
+  trialFile: document.getElementById("trial-file"),
+  banner: document.getElementById("early-warning-banner"),
+  bannerTitle: document.getElementById("warning-banner-title"),
+  bannerDesc: document.getElementById("warning-banner-desc"),
+  bannerBadge: document.getElementById("warning-lead-badge"),
+  bannerIcon: document.getElementById("warning-banner-icon"),
+  fBlocked: document.getElementById("f-blocked"),
+  fWait: document.getElementById("f-wait"),
+  fCont: document.getElementById("f-cont"),
+  fOrder: document.getElementById("f-order"),
+  resAT1Held: document.getElementById("res-a-t1-held"),
+  resAT1Blk: document.getElementById("res-a-t1-blk"),
+  resAT2Held: document.getElementById("res-a-t2-held"),
+  resAT2Blk: document.getElementById("res-a-t2-blk"),
+  resAWait: document.getElementById("res-a-wait"),
+  resBT1Held: document.getElementById("res-b-t1-held"),
+  resBT1Blk: document.getElementById("res-b-t1-blk"),
+  resBT2Held: document.getElementById("res-b-t2-held"),
+  resBT2Blk: document.getElementById("res-b-t2-blk"),
+  resBWait: document.getElementById("res-b-wait"),
+  analysisLeadBadge: document.getElementById("analysis-lead-badge"),
+  batchBtn: document.getElementById("batch-compare-button"),
+  batchSection: document.getElementById("batch-comparison-section"),
+  batchTbody: document.getElementById("batch-table-tbody"),
+  batchDesc: document.getElementById("batch-insight-desc"),
+  inputWb: document.getElementById("input-wb"),
+  inputWw: document.getElementById("input-ww"),
+  inputWc: document.getElementById("input-wc"),
+  inputWr: document.getElementById("input-wr"),
+  inputTh: document.getElementById("input-th"),
+  valWb: document.getElementById("val-wb"),
+  valWw: document.getElementById("val-ww"),
+  valWc: document.getElementById("val-wc"),
+  valWr: document.getElementById("val-wr"),
+  valTh: document.getElementById("val-th"),
+  saveWeightsBtn: document.getElementById("save-weights-btn")
+};
+
+let scoringConfig = {
+  w_b: 0.35,
+  w_w: 0.30,
+  w_c: 0.20,
+  w_r: 0.15,
+  threshold: 70
 };
 
 let mode = "vulnerable";
@@ -138,9 +181,11 @@ function renderControls() {
 function renderMetrics(frame) {
   const blocked = Object.keys(frame.waits).length;
   const done = step === sequence().length - 1;
-  const deadlock = trialMeta[mode].status === "deadlock" && done;
-  const safe = trialMeta[mode].status === "completed" && done;
-  const warning = frame.score >= 70 && !deadlock;
+  const cycle = DeadlockTrialData.hasCycle(frame);
+  const deadlock = (trialMeta[mode].status === "deadlock" && done) || cycle;
+  const safe = trialMeta[mode].status === "completed" && done && !cycle;
+  const warning = frame.score >= scoringConfig.threshold && !deadlock;
+
   els.score.textContent = String(frame.score).padStart(2, "0");
   els.blocked.textContent = String(blocked);
   els.wait.textContent = String(frame.waitMs);
@@ -149,6 +194,43 @@ function renderMetrics(frame) {
   els.state.className = "state-value" + (deadlock ? " is-danger" : safe ? " is-safe" : warning ? " is-warning" : "");
   els.state.innerHTML = '<span class="state-dot"></span>' + (deadlock ? "Deadlock detected" : safe ? "Run completed" : warning ? "Warning raised" : step ? "In progress" : "Ready to run");
   els.stateDetail.textContent = deadlock ? "Circular wait confirmed" : safe ? "2 of 2 threads finished" : warning ? "Risk threshold exceeded" : step ? "Lock activity observed" : "No active lock requests";
+
+  // Show the observed inputs. Weighted points need not equal the displayed
+  // score when the controlled structural warning rule applies.
+  if (els.fBlocked) {
+    const splitOwners = Object.keys(frame.owners).length === 2 && new Set(Object.values(frame.owners)).size === 2;
+    els.fBlocked.textContent = "Blocked: " + blocked + "/2";
+    els.fWait.textContent = "Peak wait: " + frame.waitMs + " ms";
+    els.fCont.textContent = "Conflicts: " + frame.heat;
+    els.fOrder.textContent = "Split locks: " + (splitOwners ? "yes" : "no");
+  }
+
+  // Role 3: Early Warning Alert Banner
+  if (els.banner) {
+    if (deadlock) {
+      els.banner.hidden = false;
+      els.banner.className = "warning-banner is-deadlock";
+      if (els.bannerIcon) els.bannerIcon.textContent = "⛔";
+      if (els.bannerTitle) els.bannerTitle.textContent = "DEADLOCK DETECTED (CONFIRMED CYCLE)";
+      if (els.bannerDesc) els.bannerDesc.textContent = "Wait-For Graph contains a confirmed circular wait (T1 ⇄ T2). Neither thread can release its held mutex.";
+      if (els.bannerBadge) {
+        els.bannerBadge.textContent = "CIRCULAR WAIT CONFIRMED";
+        els.bannerBadge.className = "outline-badge is-danger";
+      }
+    } else if (warning) {
+      els.banner.hidden = false;
+      els.banner.className = "warning-banner";
+      if (els.bannerIcon) els.bannerIcon.textContent = "⚠️";
+      if (els.bannerTitle) els.bannerTitle.textContent = "HIGH THREAT EARLY WARNING ACTIVE";
+      if (els.bannerDesc) els.bannerDesc.textContent = "Threat score (" + frame.score + ") crossed warning threshold (" + scoringConfig.threshold + ") before a cycle was confirmed.";
+      if (els.bannerBadge) {
+        els.bannerBadge.textContent = "EARLY PREDICTION";
+        els.bannerBadge.className = "outline-badge is-warning";
+      }
+    } else {
+      els.banner.hidden = true;
+    }
+  }
 }
 
 function renderGraph(frame) {
@@ -166,7 +248,7 @@ function renderGraph(frame) {
   els.t1Sub.textContent = frame.t1;
   els.t2Sub.textContent = frame.t2;
   els.graphSummary.textContent = frame.explanation;
-  els.graphBadge.textContent = cycle ? "CYCLE CONFIRMED" : edge1 && edge2 ? "2 WAIT EDGES" : edge1 || edge2 ? "1 WAIT EDGE" : "NO WAIT EDGES";
+  els.graphBadge.textContent = cycle ? "CYCLE CONFIRMED: T1 ⇄ T2 (DEADLOCK)" : edge1 && edge2 ? "2 WAIT EDGES (NO CYCLE)" : edge1 || edge2 ? "1 WAIT EDGE (ACTIVE)" : "NO WAIT EDGES";
   els.graphBadge.className = "outline-badge" + (cycle ? " is-danger" : edge1 || edge2 ? " is-warning" : mode === "protected" && step === sequence().length - 1 ? " is-safe" : "");
 }
 
@@ -197,6 +279,13 @@ function renderChart() {
   els.chartArea.setAttribute("d", "M" + points[0].x + " 174 L" + points.map(p => p.x + " " + p.y).join(" L") + " L" + last.x + " 174 Z");
   els.chartPoint.setAttribute("cx", String(last.x));
   els.chartPoint.setAttribute("cy", String(last.y));
+  const thresholdY = 174 - (scoringConfig.threshold / 100) * 160;
+  const thresholdLine = document.querySelector("#risk-chart .threshold-line");
+  const thresholdLabel = document.querySelector("#risk-chart .threshold-label");
+  thresholdLine.setAttribute("y1", String(thresholdY));
+  thresholdLine.setAttribute("y2", String(thresholdY));
+  thresholdLabel.setAttribute("y", String(Math.max(12, thresholdY - 8)));
+  thresholdLabel.textContent = "WARNING THRESHOLD · " + scoringConfig.threshold;
   const color = trialMeta[mode].status === "deadlock" && step === sequence().length - 1 ? "#ff6879" : trialMeta[mode].status === "completed" && step === sequence().length - 1 ? "#73d9a7" : "#54d4e0";
   els.chartLine.setAttribute("stroke", color);
   els.chartPoint.setAttribute("fill", color);
@@ -208,13 +297,66 @@ function renderHeatmap(frame) {
     element.textContent = String(value);
     element.className = "heat-cell " + (value === 0 ? "heat-zero" : value === 1 ? "heat-low" : value < 4 ? "heat-medium" : "heat-high");
   }
-  els.heatDescription.textContent = value === 0 ? "Opposite-order requests make a resource pair stand out." : mode === "protected" ? "The pair contends, but both threads follow a common order." : value >= 4 ? "A ↔ B is a confirmed deadlock hotspot in this run." : "A and B are being requested in conflicting orders.";
+  els.heatDescription.textContent = value === 0 ? "Opposite-order requests make a resource pair stand out." : DeadlockTrialData.hasCycle(frame) ? "A ↔ B forms a confirmed circular wait in this run." : mode === "protected" ? "The pair contends, but both threads follow a common order." : "A and B are being requested in conflicting orders.";
+
+  // Role 3: Update Thread x Resource Contention Table
+  if (els.resAT1Held) {
+    let a_t1_h = 0, a_t1_b = 0, a_t2_h = 0, a_t2_b = 0, a_w = 0;
+    let b_t1_h = 0, b_t1_b = 0, b_t2_h = 0, b_t2_b = 0, b_w = 0;
+    const history = sequence().slice(0, step + 1);
+    for (const f of history) {
+      if (f.owners.A === "T1") a_t1_h++;
+      if (f.owners.A === "T2") a_t2_h++;
+      if (f.waits.T1 === "A") { a_t1_b++; a_w = Math.max(a_w, f.waitMs); }
+      if (f.waits.T2 === "A") { a_t2_b++; a_w = Math.max(a_w, f.waitMs); }
+
+      if (f.owners.B === "T1") b_t1_h++;
+      if (f.owners.B === "T2") b_t2_h++;
+      if (f.waits.T1 === "B") { b_t1_b++; b_w = Math.max(b_w, f.waitMs); }
+      if (f.waits.T2 === "B") { b_t2_b++; b_w = Math.max(b_w, f.waitMs); }
+    }
+    els.resAT1Held.textContent = a_t1_h > 0 ? "YES (" + a_t1_h + "f)" : "0";
+    els.resAT1Blk.textContent = String(a_t1_b);
+    els.resAT2Held.textContent = a_t2_h > 0 ? "YES (" + a_t2_h + "f)" : "0";
+    els.resAT2Blk.textContent = String(a_t2_b);
+    els.resAWait.textContent = a_w + " ms";
+
+    els.resBT1Held.textContent = b_t1_h > 0 ? "YES (" + b_t1_h + "f)" : "0";
+    els.resBT1Blk.textContent = String(b_t1_b);
+    els.resBT2Held.textContent = b_t2_h > 0 ? "YES (" + b_t2_h + "f)" : "0";
+    els.resBT2Blk.textContent = String(b_t2_b);
+    els.resBWait.textContent = b_w + " ms";
+  }
 }
 
 function renderAnalysis(frame) {
-  els.analysisStatus.textContent = step === 0 ? "IDLE" : frame.score >= 85 ? "CRITICAL" : frame.score >= 70 ? "WARNING" : "MONITORING";
-  els.analysisStatus.className = "outline-badge" + (frame.score >= 85 ? " is-danger" : frame.score >= 70 ? " is-warning" : "");
-  els.analysisBars.innerHTML = sequence().slice(0, step + 1).map((item, index) => {
+  const history = sequence().slice(0, step + 1);
+  if (step < 1) {
+    els.analysisStatus.textContent = "INSUFFICIENT DATA";
+    els.analysisStatus.className = "outline-badge";
+    if (els.analysisLeadBadge) els.analysisLeadBadge.style.display = "none";
+  } else {
+    const s0 = history[Math.max(0, step - 3)].score;
+    const s1 = frame.score;
+    const ds = s1 - s0;
+    const trajectory = ds > 4 ? "RISING ↗" : ds < -4 ? "FALLING ↘" : "STABLE →";
+    els.analysisStatus.textContent = trajectory;
+    els.analysisStatus.className = "outline-badge" + (ds > 4 ? " is-danger" : ds < -4 ? " is-safe" : " is-warning");
+
+    // Calculate lead time from first early warning to cycle
+    const firstWarn = history.find(f => f.score >= scoringConfig.threshold);
+    const hasCycle = DeadlockTrialData.hasCycle(frame);
+    if (firstWarn && hasCycle && els.analysisLeadBadge) {
+      const leadMs = Math.max(0, frame.ms - firstWarn.ms);
+      els.analysisLeadBadge.style.display = "inline-block";
+      els.analysisLeadBadge.className = "outline-badge is-warning";
+      els.analysisLeadBadge.textContent = "LEAD TIME: " + leadMs + " ms";
+    } else if (els.analysisLeadBadge) {
+      els.analysisLeadBadge.style.display = "none";
+    }
+  }
+
+  els.analysisBars.innerHTML = history.map((item, index) => {
     const state = item.score >= 85 ? "danger" : item.score >= 70 ? "warn" : "";
     return '<div class="analysis-bar-wrap"><span class="analysis-bar-value">' + item.score + '</span><span class="analysis-bar ' + state + '" style="height:' + Math.max(item.score, 3) + '%"></span><span class="analysis-bar-label">' + String(index).padStart(2, "0") + '</span></div>';
   }).join("");
@@ -255,7 +397,7 @@ function renderCompare() {
   put("compare-insight-text",
     vulnerable.status === "deadlock" && protectedRun.status === "completed"
       ? "In these displayed runs, a circular wait formed in vulnerable mode and both threads completed in protected mode. " +
-        (trialMeta.vulnerable.source === "demo" && trialMeta.protected.source === "demo" ? "These are browser demonstration outcomes." : "Imported trial values are shown as provided.")
+        (trialMeta.vulnerable.source === "demo" && trialMeta.protected.source === "demo" ? "These are browser demonstration outcomes." : "Recorded trial values are shown as provided.")
       : "These displayed runs do not show the expected vulnerable-versus-protected contrast. Review the event logs and lock policy before drawing a conclusion.");
 }
 
@@ -270,11 +412,11 @@ function render() {
   renderAnalysis(frame);
   renderCompare();
   const source = trialMeta[mode];
-  els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
-  els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : "Imported trial · " + source.runId;
-  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : "Events loaded from your JSON file; no server request was made.";
+  els.sourceBadge.textContent = source.source === "demo" ? "DEMO DATA" : source.source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
+  els.sourceLabel.textContent = source.source === "demo" ? "Built-in demonstration" : (source.source === "live" ? "Backend trial · " : "Imported trial · ") + source.runId;
+  els.sourceDetail.textContent = source.source === "demo" ? "Scenario events are generated in this browser." : source.source === "live" ? "Recorded from real threads by the local backend." : "Events loaded from your JSON file; no server request was made.";
   els.restoreButton.hidden = source.source === "demo";
-  els.scenarioOutcome.textContent = source.source === "imported" ? "Viewing recorded trial " + source.runId :
+  els.scenarioOutcome.textContent = source.source !== "demo" ? "Viewing recorded trial " + source.runId :
     mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
 }
 
@@ -291,9 +433,10 @@ function showView(name) {
   if (name === "compare") {
     const sources = [trialMeta.vulnerable.source, trialMeta.protected.source];
     els.sourceBadge.textContent = sources.every(source => source === "demo") ? "DEMO DATA" :
-      sources.every(source => source === "imported") ? "IMPORTED TRIALS" : "MIXED SOURCES";
+      sources.every(source => source === "imported") ? "IMPORTED TRIALS" :
+      sources.every(source => source === "live") ? "LIVE TRIALS" : "MIXED SOURCES";
   } else {
-    els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : "IMPORTED TRIAL";
+    els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : trialMeta[mode].source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -323,11 +466,12 @@ function showImportFeedback(message, success) {
   els.importFeedback.textContent = message;
 }
 
-function loadTrial(data) {
+function loadTrial(data, source = "imported") {
   const imported = DeadlockTrialData.normalizeTrial(data);
+  if (!["imported", "live"].includes(source)) throw new Error("Unsupported trial source.");
   stopPlayback();
   scenarios[imported.mode] = imported.frames;
-  trialMeta[imported.mode] = { source: "imported", runId: imported.runId, status: imported.status };
+  trialMeta[imported.mode] = { source, runId: imported.runId, status: imported.status };
   completed[imported.mode] = false;
   mode = imported.mode;
   step = 0;
@@ -375,6 +519,179 @@ els.trialFile.addEventListener("change", async () => {
     els.trialFile.value = "";
   }
 });
-window.DeadlockLab = { loadTrial, restoreDemo };
+
+let isRunningLive = false;
+async function runLiveTrial(targetMode = mode) {
+  if (isRunningLive) return;
+  isRunningLive = true;
+  const liveBtn = document.getElementById("live-run-button");
+  if (liveBtn) {
+    liveBtn.disabled = true;
+    liveBtn.textContent = "⏳ Running OS threads...";
+  }
+  showImportFeedback("Connecting to Member 2 backend: executing multithreaded " + targetMode + " trial...", true);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch("/api/trials/" + encodeURIComponent(targetMode), {
+      method: "POST",
+      signal: controller.signal
+    });
+    window.clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => null);
+      throw new Error((errData && errData.detail) || ("Backend returned status " + resp.status));
+    }
+
+    const trialData = await resp.json();
+    loadTrial(trialData, "live");
+    showImportFeedback("Loaded real thread trial " + trialData.run_id + " from Member 2 backend. " + (trialData.status === "deadlock" ? "Circular wait confirmed!" : "Protected run complete!"), true);
+  } catch (err) {
+    const msg = err.name === "AbortError"
+      ? "Experiment request timed out after 8s."
+      : "Could not reach Member 2 backend at /api/trials/" + targetMode + " (" + err.message + "). Ensure backend server is running via `python -m member2_backend.api` or use demo mode.";
+    showImportFeedback(msg, false);
+  } finally {
+    isRunningLive = false;
+    if (liveBtn) {
+      liveBtn.disabled = false;
+      liveBtn.textContent = "⚡ Run live backend trial";
+    }
+  }
+}
+
+const liveRunBtn = document.getElementById("live-run-button");
+if (liveRunBtn) {
+  liveRunBtn.addEventListener("click", () => runLiveTrial(mode));
+}
+
+let isRunningBatch = false;
+async function runBatchComparison() {
+  if (isRunningBatch) return;
+  isRunningBatch = true;
+  if (els.batchBtn) {
+    els.batchBtn.disabled = true;
+    els.batchBtn.textContent = "⏳ Running 10 real trials...";
+  }
+  showImportFeedback("Running repeated multithreaded trials (5 vulnerable + 5 protected) on backend via /api/analysis/compare...", true);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+    const resp = await fetch("/api/analysis/compare?trials_per_mode=5&timeout=3.0", {
+      method: "POST",
+      signal: controller.signal
+    });
+    window.clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      throw new Error("Backend comparison error: status " + resp.status);
+    }
+    const data = await resp.json();
+
+    if (els.batchSection && els.batchTbody) {
+      els.batchSection.hidden = false;
+      const v = data.vulnerable;
+      const p = data.protected;
+
+      els.batchTbody.innerHTML = `
+        <tr style="color:var(--red);">
+          <td><strong>Vulnerable (Opposite A/B)</strong></td>
+          <td>${v.total_trials}</td>
+          <td><strong>${v.deadlock_rate_percent}%</strong> (${v.deadlock_count}/${v.total_trials})</td>
+          <td>${v.completion_rate_percent}% (${v.completion_count}/${v.total_trials})</td>
+          <td>${v.mean_warning_lead_time_ms == null ? "N/A" : v.mean_warning_lead_time_ms + " ms"}</td>
+          <td>${v.mean_detection_latency_ms == null ? "N/A" : v.mean_detection_latency_ms + " ms"}</td>
+          <td>${v.mean_peak_wait_ms} ms</td>
+          <td>${v.mean_trial_runtime_ms} ms</td>
+        </tr>
+        <tr style="color:var(--green);">
+          <td><strong>Protected (learned shared order)</strong></td>
+          <td>${p.total_trials}</td>
+          <td><strong>${p.deadlock_rate_percent}%</strong> (${p.deadlock_count}/${p.total_trials})</td>
+          <td><strong>${p.completion_rate_percent}%</strong> (${p.completion_count}/${p.total_trials})</td>
+          <td>N/A (No deadlock)</td>
+          <td>N/A (No cycle)</td>
+          <td>${p.mean_peak_wait_ms} ms</td>
+          <td>${p.mean_trial_runtime_ms} ms</td>
+        </tr>
+      `;
+      if (els.batchDesc && data.insight) {
+        els.batchDesc.textContent = data.insight;
+      }
+    }
+    showImportFeedback("Batch request finished. Review the measured rates and any inconclusive trials in the table below.", true);
+  } catch (err) {
+    showImportFeedback("Batch comparison failed: " + err.message + ". Ensure FastAPI backend is running via `python -m uvicorn member2_backend.api:app`.", false);
+  } finally {
+    isRunningBatch = false;
+    if (els.batchBtn) {
+      els.batchBtn.disabled = false;
+      els.batchBtn.textContent = "⚡ Run Batch Trials (5 Each)";
+    }
+  }
+}
+
+if (els.batchBtn) {
+  els.batchBtn.addEventListener("click", runBatchComparison);
+}
+
+function setupWeightControls() {
+  const syncLabels = () => {
+    if (els.valWb && els.inputWb) els.valWb.textContent = parseFloat(els.inputWb.value).toFixed(2);
+    if (els.valWw && els.inputWw) els.valWw.textContent = parseFloat(els.inputWw.value).toFixed(2);
+    if (els.valWc && els.inputWc) els.valWc.textContent = parseFloat(els.inputWc.value).toFixed(2);
+    if (els.valWr && els.inputWr) els.valWr.textContent = parseFloat(els.inputWr.value).toFixed(2);
+    if (els.valTh && els.inputTh) els.valTh.textContent = els.inputTh.value;
+  };
+  [els.inputWb, els.inputWw, els.inputWc, els.inputWr, els.inputTh].forEach(inp => {
+    if (inp) inp.addEventListener("input", syncLabels);
+  });
+  if (els.saveWeightsBtn) {
+    els.saveWeightsBtn.addEventListener("click", async () => {
+      const proposed = {
+        w_b: parseFloat(els.inputWb.value),
+        w_w: parseFloat(els.inputWw.value),
+        w_c: parseFloat(els.inputWc.value),
+        w_r: parseFloat(els.inputWr.value),
+        threshold: parseInt(els.inputTh.value, 10)
+      };
+      const weightSum = proposed.w_b + proposed.w_w + proposed.w_c + proposed.w_r;
+      if (Math.abs(weightSum - 1) > 0.001) {
+        showImportFeedback("The four scoring weights must add up to 1.00; current total is " + weightSum.toFixed(2) + ".", false);
+        return;
+      }
+      try {
+        const response = await fetch("/api/analysis/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            w_blocked: proposed.w_b,
+            w_wait: proposed.w_w,
+            w_contention: proposed.w_c,
+            w_resource: proposed.w_r,
+            threshold_high: proposed.threshold
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.detail || "Backend returned " + response.status);
+        }
+        Object.assign(scoringConfig, proposed);
+        render();
+        showImportFeedback("Saved scoring settings for future backend trials. Existing trial scores were not recalculated.", true);
+      } catch (error) {
+        showImportFeedback("Could not save scoring settings: " + error.message + ". Start the local backend and try again.", false);
+      }
+    });
+  }
+}
+
+setupWeightControls();
+
+window.DeadlockLab = { loadTrial, restoreDemo, runLiveTrial, runBatchComparison };
 render();
+
 
