@@ -434,7 +434,8 @@ function showView(name) {
   document.getElementById("breadcrumb-current").textContent = viewNames[name];
   if (name === "compare") {
     const sources = [trialMeta.vulnerable.source, trialMeta.protected.source];
-    els.sourceBadge.textContent = sources.every(source => source === "demo") ? "DEMO DATA" :
+    els.sourceBadge.textContent = !els.batchSection.hidden ? "MEASURED BATCH" :
+      sources.every(source => source === "demo") ? "DEMO DATA" :
       sources.every(source => source === "imported") ? "IMPORTED TRIALS" :
       sources.every(source => source === "live") ? "LIVE TRIALS" : "MIXED SOURCES";
   } else {
@@ -596,6 +597,7 @@ async function runBatchComparison() {
     if (els.batchSection && els.batchTbody) {
       els.batchSection.hidden = false;
       if (els.compareEmpty) els.compareEmpty.hidden = true;
+      els.sourceBadge.textContent = "MEASURED BATCH";
       const v = data.vulnerable;
       const p = data.protected;
 
