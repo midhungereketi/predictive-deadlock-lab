@@ -12,6 +12,8 @@ Operating Systems case study: **Predictive Deadlock Prevention Using Contention 
 
 **Submission material:** [`docs/FINAL_REPORT.md`](docs/FINAL_REPORT.md) contains the design, algorithm, measured 10-trial-per-mode results, and limitations. [`docs/DEMO_AND_PRESENTATION.md`](docs/DEMO_AND_PRESENTATION.md) has the demo steps, slide sequence, and viva answers. [`docs/results.json`](docs/results.json) contains the raw aggregate and per-trial measurements. The two `docs/sample-*.json` files can be imported into the dashboard.
 
+**Final submission files:** [`docs/submission/Final_Report.pdf`](docs/submission/Final_Report.pdf) is the printable report, and [`docs/submission/Presentation_Submission.pptx`](docs/submission/Presentation_Submission.pptx) is the editable eight-slide presentation. Both use the saved measurements in `docs/results.json`.
+
 ## Quick Start & Running the Project
 
 ### 1. Install Backend Dependencies
