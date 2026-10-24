@@ -3,148 +3,371 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080d16">
+  <meta name="theme-color" content="#050507">
   <meta name="description" content="An interactive operating systems deadlock lab. Explore lock contention, wait-for graphs, risk scoring and safe lock ordering.">
   <title>Predictive Deadlock Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
   <script src="./trial-data.js" defer></script>
+  <script src="./motion.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
-<body>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Primary navigation">
-      <a class="brand" href="#lab" aria-label="Predictive Deadlock Lab home">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span class="brand-copy"><strong>DEADLOCK<span>LAB</span></strong><small>OS EXPERIMENT / 01</small></span>
-      </a>
-      <div class="side-label">WORKSPACE</div>
-      <nav class="side-nav">
-        <button class="nav-item is-active" type="button" data-view="lab" aria-current="page"><span class="nav-icon">◫</span> Simulation lab <span class="nav-pip"></span></button>
-        <button class="nav-item" type="button" data-view="analysis"><span class="nav-icon">⌁</span> Analysis</button>
-        <button class="nav-item" type="button" data-view="compare"><span class="nav-icon">▥</span> Compare runs</button>
-        <button class="nav-item" type="button" data-view="method"><span class="nav-icon">⊙</span> How it works</button>
-      </nav>
-      <div class="side-bottom">
-        <div class="lab-note"><span class="pulse-dot"></span><strong>FRONTEND PROTOTYPE</strong><p>Interactive scenario data. Runtime backend integration comes next.</p></div>
-        <a class="repo-link" href="https://github.com/midhungereketi/predictive-deadlock-lab" target="_blank" rel="noopener noreferrer">View GitHub repository <span aria-hidden="true">↗</span></a>
-        <div class="side-credit">BUILT FOR OPERATING SYSTEMS<br><span>CASE STUDY EXPERIMENT 01</span></div>
-      </div>
-    </aside>
+<body data-state="calm">
+  <!-- Ambient layers: particle field, mesh orbs, grain -->
+  <canvas id="field" class="field" aria-hidden="true"></canvas>
+  <div class="mesh" aria-hidden="true"><i class="orb orb-1"></i><i class="orb orb-2"></i><i class="orb orb-3"></i></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="flash" aria-hidden="true"></div>
 
-    <main class="main">
-      <header class="topbar">
-        <div class="breadcrumb"><span>OPERATING SYSTEMS</span><span class="crumb-line">/</span><strong id="breadcrumb-current">SIMULATION LAB</strong></div>
-        <div class="top-actions"><span class="top-demo"><span class="tiny-dot"></span> <span id="source-badge">DEMO DATA</span></span><span class="top-date">PREDICTIVE DEADLOCK PREVENTION</span></div>
-      </header>
+  <!-- Intro: two threads lock into a cycle, then the order resolves it -->
+  <div class="intro" aria-hidden="true">
+    <svg class="intro-mark" viewBox="0 0 200 200">
+      <circle class="intro-track" cx="100" cy="100" r="58"/>
+      <circle class="intro-arc" cx="100" cy="100" r="58"/>
+      <circle class="intro-dot d1" cx="42" cy="100" r="7"/>
+      <circle class="intro-dot d2" cx="158" cy="100" r="7"/>
+    </svg>
+    <div class="intro-word"><span>DEADLOCK</span><em>lab</em></div>
+  </div>
 
-      <div class="content">
-        <section id="view-lab" class="view is-visible" aria-labelledby="lab-title">
-          <div class="page-head">
-            <div><div class="eyebrow"><span class="eyebrow-line"></span> INTERACTIVE EXPERIMENT <span class="eyebrow-num">/ 01</span></div><h1 id="lab-title">Watch the wait <em>before</em> the cycle.</h1><p>See how two threads compete for shared locks, then compare what changes when every thread follows one safe acquisition order.</p></div>
-            <div class="head-illustration" aria-hidden="true"><span class="orbit orbit-a"></span><span class="orbit orbit-b"></span><span class="orbit-core"></span><span class="orbit-label a">T1</span><span class="orbit-label b">T2</span></div>
-          </div>
+  <header class="island" aria-label="Primary navigation">
+    <a class="brand" href="#lab" aria-label="Predictive Deadlock Lab home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span class="brand-copy">Deadlock<em>Lab</em></span>
+    </a>
+    <nav class="side-nav">
+      <span class="nav-glider" aria-hidden="true"></span>
+      <button class="nav-item is-active" type="button" data-view="lab" aria-current="page">Lab</button>
+      <button class="nav-item" type="button" data-view="analysis">Analysis</button>
+      <button class="nav-item" type="button" data-view="compare">Compare</button>
+      <button class="nav-item" type="button" data-view="method">Method</button>
+    </nav>
+    <span class="top-demo"><span class="tiny-dot"></span><span id="source-badge">DEMO DATA</span></span>
+  </header>
 
-          <div class="experiment-bar panel">
-            <div class="experiment-title"><span class="section-number">01</span><div><strong>Experiment controls</strong><small>Two threads · Two mutexes · One repeatable scenario</small></div></div>
-            <div class="experiment-controls">
-              <div class="mode-switch" role="group" aria-label="Experiment mode"><button class="mode-btn is-selected" type="button" data-mode="vulnerable" aria-pressed="true"><span class="mode-indicator danger"></span> Vulnerable</button><button class="mode-btn" type="button" data-mode="protected" aria-pressed="false"><span class="mode-indicator success"></span> Protected</button></div>
-              <button class="button button-primary" id="play-button" type="button"><span id="play-icon" aria-hidden="true">▶</span> <span id="play-label">Run simulation</span></button>
-              <button class="icon-button" id="step-button" type="button" aria-label="Advance one step" title="Advance one step">↦</button>
-              <button class="icon-button" id="reset-button" type="button" aria-label="Reset simulation" title="Reset simulation">↺</button>
+  <main class="main">
+    <div class="breadcrumb"><span>Operating Systems</span><span class="crumb-line"></span><strong id="breadcrumb-current">SIMULATION LAB</strong></div>
+
+    <div class="content">
+      <!-- ============ LAB ============ -->
+      <section id="view-lab" class="view is-visible" aria-labelledby="lab-title">
+        <div class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Interactive experiment · 01</div>
+            <h1 id="lab-title" class="split">Watch the wait <em>before</em> the cycle.</h1>
+            <p data-reveal>Explore two shared mutexes with 3–12 real worker threads. Compare a reproducible circular wait with a shared lock order that prevents one.</p>
+            <div class="hero-cta" data-reveal>
+              <button class="button button-primary magnetic" id="play-button" type="button"><span class="btn-label"><span id="play-icon" aria-hidden="true">▶</span> <span id="play-label">Run simulation</span></span><span class="btn-orb" aria-hidden="true">↗</span></button>
+              <button class="icon-button magnetic" id="step-button" type="button" aria-label="Advance one step" title="Advance one step">↦</button>
+              <button class="icon-button magnetic" id="reset-button" type="button" aria-label="Reset simulation" title="Reset simulation">↺</button>
             </div>
           </div>
 
-          <div class="scenario-strip"><span class="scenario-tag">SCENARIO</span><span><b>T1</b> requests A → B</span><span class="scenario-divider"></span><span><b>T2</b> requests B → A</span><span class="scenario-arrow">→</span><span id="scenario-outcome">Unordered acquisition can create a circular wait</span></div>
-          <div class="data-source-row"><span><span class="source-led"></span><b id="data-source-label">Built-in demonstration</b><small id="data-source-detail">Scenario events are generated in this browser.</small></span><div><button id="live-run-button" type="button" title="Execute real OS threads on Member 2 backend">⚡ Run live backend trial</button><button id="import-button" type="button">↑ Import trial JSON</button><button id="restore-button" type="button" hidden>Restore demo</button><input id="trial-file" type="file" accept=".json,application/json" hidden></div></div>
-          <p id="import-feedback" class="import-feedback" role="status" aria-live="polite" hidden></p>
+          <aside class="hero-card panel" data-reveal>
+            <div class="core">
+              <div class="overline">Scenario</div>
+              <div class="mode-switch" role="group" aria-label="Experiment mode">
+                <span class="mode-glider" aria-hidden="true"></span>
+                <button class="mode-btn is-selected" type="button" data-mode="vulnerable" aria-pressed="true"><span class="mode-indicator danger"></span> Vulnerable</button>
+                <button class="mode-btn" type="button" data-mode="protected" aria-pressed="false"><span class="mode-indicator success"></span> Protected</button>
+              </div>
+              <div class="paths">
+                <div class="path-row"><b>T1</b><span class="path-track"><i>A</i><s></s><i>B</i></span></div>
+                <div class="path-row"><b>T2</b><span class="path-track t2"><i>B</i><s></s><i>A</i></span></div>
+              </div>
+              <p class="scenario-outcome" id="scenario-outcome">Unordered acquisition can create a circular wait</p>
+            </div>
+          </aside>
+        </div>
 
-          <div class="metrics">
-            <article class="metric panel"><div class="metric-heading">THREAT SCORE <span class="metric-glyph">⌁</span></div><div class="metric-value"><span id="metric-score">08</span><small>/ 100</small></div><div class="metric-foot"><span id="risk-chip" class="chip chip-calm">LOW RISK</span><span>heuristic estimate</span></div></article>
-            <article class="metric panel"><div class="metric-heading">BLOCKED THREADS <span class="metric-glyph">⋈</span></div><div class="metric-value"><span id="metric-blocked">0</span><small>/ 2</small></div><div class="metric-foot"><span class="metric-rule"></span><span>currently waiting</span></div></article>
-            <article class="metric panel"><div class="metric-heading">LONGEST WAIT <span class="metric-glyph">◷</span></div><div class="metric-value"><span id="metric-wait">0</span><small>ms</small></div><div class="metric-foot"><span class="metric-rule"></span><span>simulated elapsed time</span></div></article>
-            <article class="metric panel status-metric"><div class="metric-heading">SYSTEM STATE <span class="metric-glyph">◉</span></div><div id="metric-state" class="state-value"><span class="state-dot"></span> Ready to run</div><div class="metric-foot"><span id="state-detail">No active lock requests</span></div></article>
+        <div class="data-source-row panel" data-reveal>
+          <div class="core">
+            <span class="source-copy"><span class="source-led"></span><b id="data-source-label">Built-in demonstration</b><small id="data-source-detail">Scenario events are generated in this browser.</small></span>
+            <div class="source-actions">
+              <button id="live-run-button" class="chip-btn" type="button" title="Execute real OS threads on the backend">⚡ Run live backend trial</button>
+              <label class="thread-count-control" for="multi-thread-count">Worker threads
+                <select id="multi-thread-count" aria-label="Number of worker threads">
+                  <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+                  <option value="6" selected>6</option><option value="7">7</option><option value="8">8</option>
+                  <option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                </select>
+              </label>
+              <button id="multi-thread-run-button" class="chip-btn" type="button" title="Run a configurable multi-thread experiment">⚡ Run multi-thread trial</button>
+              <button id="import-button" class="chip-btn" type="button">↑ Import trial JSON</button>
+              <button id="restore-button" class="chip-btn" type="button" hidden>Restore demo</button>
+              <input id="trial-file" type="file" accept=".json,application/json" hidden>
+            </div>
           </div>
+        </div>
+        <p id="import-feedback" class="import-feedback" role="status" aria-live="polite" hidden></p>
 
-          <div class="primary-grid">
-            <article class="panel graph-panel">
-              <div class="panel-head"><div><div class="overline">LIVE DEPENDENCY VIEW</div><h2>Wait-For Graph</h2></div><span id="graph-state-badge" class="outline-badge">NO WAIT EDGES</span></div>
+        <section id="multi-thread-results" class="panel multi-thread-results" aria-labelledby="multi-thread-title" hidden>
+          <div class="core">
+            <div class="panel-head">
+              <div><div class="overline">Configurable live experiment</div><h2 id="multi-thread-title">Multi-thread run</h2></div>
+              <span id="multi-thread-status" class="outline-badge">WAITING</span>
+            </div>
+            <p id="multi-thread-summary" class="multi-thread-summary"></p>
+            <div class="multi-thread-metrics" aria-label="Run metrics">
+              <div><span>WORKERS</span><strong id="multi-thread-metric-workers">—</strong></div>
+              <div><span>COMPLETED</span><strong id="multi-thread-metric-completed">—</strong></div>
+              <div><span>BLOCKED</span><strong id="multi-thread-metric-blocked">—</strong></div>
+              <div><span>CONTENTION</span><strong id="multi-thread-metric-contention">—</strong></div>
+              <div><span>RUNTIME</span><strong id="multi-thread-metric-runtime">—</strong></div>
+            </div>
+            <div class="multi-thread-visuals">
+              <div class="multi-thread-graph-wrap">
+                <div class="overline">Wait-for graph · waiter → lock owner</div>
+                <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Multi-thread wait-for graph"></svg>
+              </div>
+              <div class="multi-thread-status-wrap">
+                <div id="multi-thread-worker-heading" class="overline">Worker state at observed outcome</div>
+                <div id="multi-thread-worker-list" class="multi-thread-worker-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div id="early-warning-banner" class="warning-banner" hidden>
+          <span id="warning-banner-icon" class="warning-banner-icon">⚠️</span>
+          <div class="warning-banner-body">
+            <strong id="warning-banner-title">EARLY WARNING ACTIVE</strong>
+            <span id="warning-banner-desc">Contention threat score crossed the 70-point threshold before deadlock.</span>
+          </div>
+          <span id="warning-lead-badge" class="outline-badge is-warning">EARLY SIGNAL</span>
+        </div>
+
+        <div class="bento">
+          <!-- Wait-For Graph -->
+          <article class="panel graph-panel span-8" data-reveal>
+            <div class="core spot">
+              <div class="panel-head"><div><div class="overline">Live dependency view</div><h2>Wait-For Graph</h2></div><span id="graph-state-badge" class="outline-badge">NO WAIT EDGES</span></div>
               <div class="graph-stage">
                 <svg id="wait-graph" viewBox="0 0 650 250" role="img" aria-label="Wait-For Graph with thread nodes T1 and T2">
-                  <defs><marker id="arrow-cyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#49c5d5"/></marker><marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ff6577"/></marker></defs>
+                  <defs>
+                    <marker id="arrow-cyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ffb547"/></marker>
+                    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ff4d6d"/></marker>
+                    <radialGradient id="node-glow"><stop offset="0%" stop-color="var(--accent)" stop-opacity=".55"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></radialGradient>
+                  </defs>
                   <path class="graph-guide" d="M205 125 H445"/>
                   <path id="edge-t1-t2" class="graph-edge" d="M211 95 C290 26 360 26 439 95"/>
                   <path id="edge-t2-t1" class="graph-edge" d="M439 157 C360 226 290 226 211 157"/>
+                  <circle class="edge-spark s1" r="4"/>
+                  <circle class="edge-spark s2" r="4"/>
+                  <circle class="cycle-ring" cx="325" cy="125" r="112"/>
                   <text id="edge-label-top" class="edge-label" x="325" y="48" text-anchor="middle">waits for B</text>
                   <text id="edge-label-bottom" class="edge-label" x="325" y="216" text-anchor="middle">waits for A</text>
-                  <g class="thread-node" transform="translate(150 125)"><circle class="node-ring" r="62"/><circle class="node-inner" r="48"/><text class="node-id" text-anchor="middle" y="-5">T1</text><text id="t1-sub" class="node-sub" text-anchor="middle" y="21">IDLE</text></g>
-                  <g class="thread-node node-two" transform="translate(500 125)"><circle class="node-ring" r="62"/><circle class="node-inner" r="48"/><text class="node-id" text-anchor="middle" y="-5">T2</text><text id="t2-sub" class="node-sub" text-anchor="middle" y="21">IDLE</text></g>
+                  <g class="thread-node" transform="translate(150 125)"><circle class="node-halo" r="90" fill="url(#node-glow)"/><circle class="node-ring" r="62"/><circle class="node-orbit" r="62"/><circle class="node-inner" r="48"/><text class="node-id" text-anchor="middle" y="-5">T1</text><text id="t1-sub" class="node-sub" text-anchor="middle" y="21">IDLE</text></g>
+                  <g class="thread-node node-two" transform="translate(500 125)"><circle class="node-halo" r="90" fill="url(#node-glow)"/><circle class="node-ring" r="62"/><circle class="node-orbit" r="62"/><circle class="node-inner" r="48"/><text class="node-id" text-anchor="middle" y="-5">T2</text><text id="t2-sub" class="node-sub" text-anchor="middle" y="21">IDLE</text></g>
                 </svg>
-                <div class="resource-pill pill-a"><span>LOCK A</span><b id="owner-a">FREE</b></div><div class="resource-pill pill-b"><span>LOCK B</span><b id="owner-b">FREE</b></div>
+                <div class="resource-pill pill-a"><span>LOCK A</span><b id="owner-a">FREE</b></div>
+                <div class="resource-pill pill-b"><span>LOCK B</span><b id="owner-b">FREE</b></div>
               </div>
-              <div class="graph-footer"><div class="graph-legend"><span><i class="legend-line"></i> Waiting dependency</span><span><i class="legend-node"></i> Thread</span><span><i class="legend-lock"></i> Owned lock</span></div><div id="graph-summary" class="graph-summary">An edge appears when one thread waits for a lock held by another.</div></div>
-            </article>
-            <article class="panel timeline-panel">
-              <div class="panel-head"><div><div class="overline">EVENT STREAM</div><h2>Execution timeline</h2></div><span id="timeline-count" class="small-counter">00 EVENTS</span></div>
+              <div class="graph-footer"><div class="graph-legend"><span><i class="legend-line"></i>Waiting dependency</span><span><i class="legend-node"></i>Thread</span><span><i class="legend-lock"></i>Owned lock</span></div><div id="graph-summary" class="graph-summary">An edge appears when one thread waits for a lock held by another.</div></div>
+            </div>
+          </article>
+
+          <!-- Threat gauge -->
+          <article class="panel metric score-card span-4" data-reveal>
+            <div class="core spot">
+              <div class="metric-heading">Threat score</div>
+              <div class="gauge">
+                <svg viewBox="0 0 200 200" aria-hidden="true">
+                  <circle class="gauge-track" cx="100" cy="100" r="84"/>
+                  <circle class="gauge-ticks" cx="100" cy="100" r="94"/>
+                  <circle id="gauge-arc" class="gauge-arc" cx="100" cy="100" r="84"/>
+                  <circle id="gauge-threshold" class="gauge-threshold" cx="100" cy="100" r="84"/>
+                </svg>
+                <div class="metric-value"><span id="metric-score">08</span><small>/ 100</small></div>
+              </div>
+              <div class="metric-foot"><span id="risk-chip" class="chip chip-calm">LOW RISK</span><span>heuristic estimate</span></div>
+              <div class="factor-mini" id="metric-factors" title="Observed inputs to the threat score; a structural risk rule can raise the final score.">
+                <span class="f-item" id="f-blocked">B: 0%</span>
+                <span class="f-item" id="f-wait">W: 0%</span>
+                <span class="f-item" id="f-cont">C: 0%</span>
+                <span class="f-item" id="f-order">O: 0%</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Timeline -->
+          <article class="panel timeline-panel span-4" data-reveal>
+            <div class="core">
+              <div class="panel-head"><div><div class="overline">Event stream</div><h2>Execution timeline</h2></div><span id="timeline-count" class="small-counter">00 EVENTS</span></div>
               <div id="timeline" class="timeline" aria-live="polite"></div>
               <div class="timeline-bottom"><span class="tiny-dot"></span> <span id="timeline-bottom-text">Waiting for experiment</span></div>
-            </article>
-          </div>
-
-          <div class="secondary-grid">
-            <article class="panel chart-panel"><div class="panel-head"><div><div class="overline">EARLY WARNING SIGNAL</div><h2>Risk over time</h2></div><span class="outline-badge">0–100 SCALE</span></div><div class="chart-wrap"><div class="chart-y"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div><svg id="risk-chart" viewBox="0 0 600 190" preserveAspectRatio="none" role="img" aria-label="Threat score over time"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#49c5d5" stop-opacity=".24"/><stop offset="100%" stop-color="#49c5d5" stop-opacity="0"/></linearGradient></defs><path class="chart-grid" d="M0 14 H600 M0 54 H600 M0 94 H600 M0 134 H600 M0 174 H600"/><line class="threshold-line" x1="0" x2="600" y1="62" y2="62"/><text class="threshold-label" x="596" y="54" text-anchor="end">WARNING THRESHOLD · 70</text><path id="chart-area" fill="url(#chart-fill)"/><polyline id="chart-line" fill="none" stroke="#49c5d5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle id="chart-point" r="5" fill="#49c5d5" stroke="#0f1a28" stroke-width="4"/></svg></div><div class="chart-x"><span>START</span><span>RUN PROGRESS</span><span>END</span></div><div class="chart-caption"><span class="line-key"></span><span>Threat score</span><span class="dash-key"></span><span>Warning threshold</span></div></article>
-            <article class="panel heat-panel"><div class="panel-head"><div><div class="overline">RESOURCE PAIR ACTIVITY</div><h2>Contention heatmap</h2></div><span class="outline-badge">A × B</span></div><div class="heat-layout"><div class="heatmap" aria-label="Resource contention heatmap"><span class="heat-empty"></span><span class="heat-axis">A</span><span class="heat-axis">B</span><span class="heat-axis">A</span><span class="heat-cell heat-diagonal">—</span><span id="heat-ab" class="heat-cell heat-zero">0</span><span class="heat-axis">B</span><span id="heat-ba" class="heat-cell heat-zero">0</span><span class="heat-cell heat-diagonal">—</span></div><div class="heat-explain"><span class="heat-label">CONFLICT INTENSITY</span><div class="heat-scale"><i></i><i></i><i></i><i></i><i></i></div><div class="heat-scale-labels"><span>LOW</span><span>HIGH</span></div><p id="heat-description">Opposite-order requests make a resource pair stand out.</p></div></div></article>
-          </div>
-          <div class="bottom-callout"><div class="callout-icon">i</div><p><strong>What you are seeing:</strong> This frontend uses a controlled, step-by-step demonstration. Risk is a heuristic warning; a cycle in the Wait-For Graph confirms deadlock in this two-lock scenario.</p><button type="button" data-view="method">Read the method <span>↗</span></button></div>
-        </section>
-
-        <section id="view-analysis" class="view" aria-labelledby="analysis-title">
-          <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> LIVE TELEMETRY <span class="eyebrow-num">/ 02</span></div><h1 id="analysis-title">Where contention <em>builds.</em></h1><p>Track the signals behind the warning. Every value here comes from the current browser demonstration.</p></div>
-          <div class="analysis-grid"><article class="panel analysis-card wide"><div class="panel-head"><div><div class="overline">TREND</div><h2>Current risk trajectory</h2></div><span id="analysis-status" class="outline-badge">IDLE</span></div><div id="analysis-bars" class="analysis-bars"></div><p class="analysis-help">The score combines lock-order inversion, blocked threads, waiting time, and resource contention. It is an illustrative heuristic, not a guarantee.</p></article><article class="panel analysis-card"><div class="panel-head"><div><div class="overline">LOCK OWNERSHIP</div><h2>Resource state</h2></div></div><div class="resource-state"><div><span><i class="res-square res-a"></i> Resource A</span><b id="analysis-owner-a">FREE</b></div><div><span><i class="res-square res-b"></i> Resource B</span><b id="analysis-owner-b">FREE</b></div></div><div class="analysis-divider"></div><p id="analysis-waits">No thread is waiting for a resource.</p></article><article class="panel analysis-card"><div class="panel-head"><div><div class="overline">ORDER TRACKER</div><h2>Acquisition paths</h2></div></div><div class="path-card"><span>THREAD 01</span><strong>A <i>→</i> B</strong></div><div class="path-card"><span>THREAD 02</span><strong id="analysis-t2-path">B <i>→</i> A</strong></div><p id="analysis-order-note" class="analysis-help">Opposite orders create a possible circular wait.</p></article></div>
-        </section>
-
-        <section id="view-compare" class="view" aria-labelledby="compare-title">
-          <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> EXPERIMENT RESULTS <span class="eyebrow-num">/ 03</span></div><h1 id="compare-title">One scenario. <em>Two outcomes.</em></h1><p>Compare the deliberately vulnerable schedule against consistent lock ordering.</p></div>
-          <div class="compare-toolbar panel"><div><strong>Side-by-side comparison</strong><span>Complete both modes, or inspect the available scenario outcomes.</span></div><button id="compare-run-button" class="button button-primary" type="button">Compare available runs <span>↗</span></button></div>
-          <div id="compare-empty" class="compare-empty panel"><div class="empty-symbol">↔</div><h2>Ready to compare</h2><p>Use the button above, or complete one run in each mode. Results will appear here.</p></div>
-          <div id="compare-results" class="compare-results" hidden>
-            <div class="compare-columns">
-              <article id="compare-v-card" class="panel compare-mode danger-mode">
-                <div class="compare-mode-top"><span class="compare-symbol">×</span><span>MODE 01 / VULNERABLE · <span id="compare-v-source">DEMO</span></span></div>
-                <h2 id="compare-v-title">Circular wait formed</h2><p id="compare-v-description">T1 holds A while requesting B. T2 holds B while requesting A.</p>
-                <div id="compare-v-result" class="compare-big danger-text">DEADLOCK</div>
-                <div class="compare-mini"><span>Peak blocked threads</span><strong id="compare-v-blocked">2 / 2</strong></div>
-                <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-v-cycle">Cycle found</strong></div>
-                <div class="compare-mini"><span>Peak threat score</span><strong id="compare-v-score">96 / 100</strong></div>
-                <div class="compare-mini"><span>Warning lead time</span><strong id="compare-v-lead">400 ms</strong></div>
-              </article>
-              <article id="compare-p-card" class="panel compare-mode safe-mode">
-                <div class="compare-mode-top"><span class="compare-symbol">✓</span><span>MODE 02 / PROTECTED · <span id="compare-p-source">DEMO</span></span></div>
-                <h2 id="compare-p-title">Both threads finished</h2><p id="compare-p-description">Requests are reordered before acquisition so both threads follow A → B.</p>
-                <div id="compare-p-result" class="compare-big safe-text">COMPLETE</div>
-                <div class="compare-mini"><span>Completed threads</span><strong id="compare-p-completed">2 / 2</strong></div>
-                <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-p-cycle">No cycle</strong></div>
-                <div class="compare-mini"><span>Peak threat score</span><strong id="compare-p-score">39 / 100</strong></div>
-                <div class="compare-mini"><span>Run duration</span><strong id="compare-p-duration">1200 ms</strong></div>
-              </article>
             </div>
-            <div class="compare-insight panel"><span class="insight-kicker">THE OBSERVATION</span><p id="compare-insight-text">The two runs use the same resource pair. Review the measurements above.</p></div>
-            <button id="export-button" class="button button-outline" type="button">↓ Export current trial events as CSV</button>
-          </div>
-        </section>
+          </article>
 
-        <section id="view-method" class="view" aria-labelledby="method-title">
-          <div class="subpage-head"><div class="eyebrow"><span class="eyebrow-line"></span> METHOD & DEFINITIONS <span class="eyebrow-num">/ 04</span></div><h1 id="method-title">Understand the <em>mechanism.</em></h1><p>A short guide to the operating systems concepts shown in the dashboard.</p></div>
-          <div class="method-grid"><article class="panel method-card"><span class="method-num">01 / DETECT</span><div class="method-icon">↗</div><h2>Wait-For Graph</h2><p>A node is a thread. An arrow T1 → T2 means T1 waits for a lock currently held by T2. In the two-thread, single-instance-lock demo, T1 → T2 → T1 confirms a deadlock.</p></article><article class="panel method-card"><span class="method-num">02 / WARN</span><div class="method-icon">⌁</div><h2>Contention score</h2><p>Opposite lock order, blocked threads, and longer waits increase the displayed threat score. Crossing the threshold produces an early warning, which is an estimate rather than proof of deadlock.</p></article><article class="panel method-card"><span class="method-num">03 / PREVENT</span><div class="method-icon">⇥</div><h2>Common lock order</h2><p>In protected mode, every thread chooses A → B before it acquires its first lock. A shared total order prevents circular wait in this scenario. Reordering after a thread already holds a lock would be too late.</p></article></div>
-          <div class="method-flow panel"><div class="overline">THE DEMONSTRATION</div><div class="flow-steps"><div><b>01</b><span>Choose mode</span></div><i>→</i><div><b>02</b><span>Run or step</span></div><i>→</i><div><b>03</b><span>Watch graph & score</span></div><i>→</i><div><b>04</b><span>Compare outcomes</span></div></div></div>
-          <div class="method-disclaimer">CURRENT STAGE <strong>Frontend demonstration</strong><p>Scenario events are generated in the browser. The future backend should run actual threads, record timestamped lock events, isolate deadlocked trials, and provide data to these same views.</p></div>
-        </section>
-      </div>
-      <footer class="footer"><span>© PREDICTIVE DEADLOCK LAB</span><span>DESIGNED & INITIALIZED BY MIDHUN GEREKETI · TEAM CASE STUDY</span><span>DEMO / V1.0</span></footer>
-    </main>
-  </div>
+          <!-- Small metrics -->
+          <div class="metric-stack span-3">
+            <article class="panel metric" data-reveal><div class="core spot"><div class="metric-heading">Blocked threads</div><div class="metric-value"><span id="metric-blocked">0</span><small>/ 2</small></div><div class="metric-foot"><span>currently waiting</span></div></div></article>
+            <article class="panel metric" data-reveal><div class="core spot"><div class="metric-heading">Longest wait</div><div class="metric-value"><span id="metric-wait">0</span><small>ms</small></div><div class="metric-foot"><span>simulated elapsed time</span></div></div></article>
+            <article class="panel metric status-metric" data-reveal><div class="core spot"><div class="metric-heading">System state</div><div id="metric-state" class="state-value"><span class="state-dot"></span> Ready to run</div><div class="metric-foot"><span id="state-detail">No active lock requests</span></div></div></article>
+          </div>
+
+          <!-- Risk chart -->
+          <article class="panel chart-panel span-5" data-reveal>
+            <div class="core">
+              <div class="panel-head"><div><div class="overline">Early warning signal</div><h2>Risk over time</h2></div><span class="outline-badge">0–100</span></div>
+              <div class="chart-wrap"><div class="chart-y"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+                <svg id="risk-chart" viewBox="0 0 600 190" preserveAspectRatio="none" role="img" aria-label="Threat score over time">
+                  <defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity=".32"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+                  <path class="chart-grid" d="M0 14 H600 M0 54 H600 M0 94 H600 M0 134 H600 M0 174 H600"/>
+                  <line class="threshold-line" x1="0" x2="600" y1="62" y2="62"/>
+                  <text class="threshold-label" x="596" y="54" text-anchor="end">WARNING THRESHOLD · 70</text>
+                  <path id="chart-area" fill="url(#chart-fill)"/>
+                  <polyline id="chart-line" fill="none" stroke="#6ee7ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+                  <circle id="chart-point" r="5" fill="#6ee7ff" stroke="#07080c" stroke-width="4"/>
+                </svg></div>
+              <div class="chart-x"><span>START</span><span>RUN PROGRESS</span><span>END</span></div>
+            </div>
+          </article>
+
+          <!-- Heatmap -->
+          <article class="panel heat-panel span-8" data-reveal>
+            <div class="core">
+              <div class="panel-head"><div><div class="overline">Resource pair activity</div><h2>Contention heatmap</h2></div><span class="outline-badge">A × B</span></div>
+              <div class="heat-layout">
+                <div class="heatmap" aria-label="Resource contention heatmap"><span class="heat-empty"></span><span class="heat-axis">A</span><span class="heat-axis">B</span><span class="heat-axis">A</span><span class="heat-cell heat-diagonal">—</span><span id="heat-ab" class="heat-cell heat-zero">0</span><span class="heat-axis">B</span><span id="heat-ba" class="heat-cell heat-zero">0</span><span class="heat-cell heat-diagonal">—</span></div>
+                <div class="heat-explain"><span class="overline">Conflict intensity</span><div class="heat-scale"><i></i><i></i><i></i><i></i><i></i></div><div class="heat-scale-labels"><span>LOW</span><span>HIGH</span></div><p id="heat-description">Opposite-order requests make a resource pair stand out.</p></div>
+              </div>
+              <div class="table-wrap">
+                <table class="contention-table">
+                  <thead><tr><th>Resource</th><th>T1 Held</th><th>T1 Blocked</th><th>T2 Held</th><th>T2 Blocked</th><th>Max Wait</th></tr></thead>
+                  <tbody id="contention-table-body">
+                    <tr><td>Lock A</td><td id="res-a-t1-held">0</td><td id="res-a-t1-blk">0</td><td id="res-a-t2-held">0</td><td id="res-a-t2-blk">0</td><td id="res-a-wait">0 ms</td></tr>
+                    <tr><td>Lock B</td><td id="res-b-t1-held">0</td><td id="res-b-t1-blk">0</td><td id="res-b-t2-held">0</td><td id="res-b-t2-blk">0</td><td id="res-b-wait">0 ms</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel callout span-4" data-reveal>
+            <div class="core">
+              <div class="overline">What you are seeing</div>
+              <p>A controlled, step-by-step demonstration. Risk is a heuristic warning; a cycle in the Wait-For Graph confirms deadlock in this two-lock scenario.</p>
+              <button class="button button-ghost magnetic" type="button" data-view="method"><span class="btn-label">Read the method</span><span class="btn-orb" aria-hidden="true">↗</span></button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ ANALYSIS ============ -->
+      <section id="view-analysis" class="view" aria-labelledby="analysis-title">
+        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Trial analysis · 02</div><h1 id="analysis-title" class="split">Where contention <em>builds.</em></h1><p data-reveal>Track the signals behind the warning in the current demo, imported file, or FastAPI trial.</p></div>
+        <div class="bento">
+          <article class="panel span-12" data-reveal><div class="core">
+            <div class="panel-head"><div><div class="overline">Trend &amp; forecast</div><h2>Current risk trajectory</h2></div><div class="badge-row"><span id="analysis-lead-badge" class="outline-badge" style="display:none;">LEAD: -- ms</span><span id="analysis-status" class="outline-badge">IDLE</span></div></div>
+            <div id="analysis-bars" class="analysis-bars"></div>
+            <p class="analysis-help">The score combines lock-order inversion, blocked threads, waiting time, and resource contention. It is an illustrative heuristic, not a guarantee.</p>
+          </div></article>
+          <article class="panel span-6" data-reveal><div class="core">
+            <div class="panel-head"><div><div class="overline">Lock ownership</div><h2>Resource state</h2></div></div>
+            <div class="resource-state"><div><span><i class="res-square res-a"></i> Resource A</span><b id="analysis-owner-a">FREE</b></div><div><span><i class="res-square res-b"></i> Resource B</span><b id="analysis-owner-b">FREE</b></div></div>
+            <p id="analysis-waits" class="analysis-help">No thread is waiting for a resource.</p>
+          </div></article>
+          <article class="panel span-6" data-reveal><div class="core">
+            <div class="panel-head"><div><div class="overline">Order tracker</div><h2>Acquisition paths</h2></div></div>
+            <div class="path-card"><span>THREAD 01</span><strong>A <i>→</i> B</strong></div>
+            <div class="path-card"><span>THREAD 02</span><strong id="analysis-t2-path">B <i>→</i> A</strong></div>
+            <p id="analysis-order-note" class="analysis-help">Opposite orders create a possible circular wait.</p>
+          </div></article>
+          <article class="panel span-12" data-reveal><div class="core">
+            <div class="panel-head">
+              <div><div class="overline">Scoring engine</div><h2>Configurable threat weights</h2></div>
+              <button id="save-weights-btn" class="button button-ghost magnetic" type="button"><span class="btn-label">Apply weights</span><span class="btn-orb" aria-hidden="true">↗</span></button>
+            </div>
+            <div class="formula-box"><code>ThreatScore = round(w_b·B_norm + w_w·W_norm + w_c·C_norm + w_r·R_norm)</code></div>
+            <div class="weights-grid">
+              <div class="weight-control"><label>w_b · Blocked threads <span id="val-wb">0.35</span></label><input type="range" id="input-wb" min="0" max="1" step="0.05" value="0.35"></div>
+              <div class="weight-control"><label>w_w · Wait duration <span id="val-ww">0.30</span></label><input type="range" id="input-ww" min="0" max="1" step="0.05" value="0.30"></div>
+              <div class="weight-control"><label>w_c · Contention events <span id="val-wc">0.20</span></label><input type="range" id="input-wc" min="0" max="1" step="0.05" value="0.20"></div>
+              <div class="weight-control"><label>w_r · Lock conflict index <span id="val-wr">0.15</span></label><input type="range" id="input-wr" min="0" max="1" step="0.05" value="0.15"></div>
+              <div class="weight-control"><label>Early warning threshold <span id="val-th">70</span></label><input type="range" id="input-th" min="40" max="95" step="1" value="70"></div>
+            </div>
+            <p class="analysis-help">Weights must sum to 1.00. Early warning triggers when score ≥ threshold before a cycle forms.</p>
+          </div></article>
+        </div>
+      </section>
+
+      <!-- ============ COMPARE ============ -->
+      <section id="view-compare" class="view" aria-labelledby="compare-title">
+        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Experiment results · 03</div><h1 id="compare-title" class="split">One scenario. <em>Two outcomes.</em></h1><p data-reveal>Compare the deliberately vulnerable schedule against consistent lock ordering.</p></div>
+        <div class="compare-toolbar panel" data-reveal><div class="core">
+          <div><strong>Side-by-side comparison</strong><span>Complete both modes, or run real repeated trials on the backend.</span></div>
+          <div class="toolbar-actions">
+            <button id="batch-compare-button" class="chip-btn" type="button" title="Run 5 real OS multithreaded trials per mode via /api/analysis/compare">⚡ Run Batch Trials (5 Each)</button>
+            <button id="compare-run-button" class="button button-primary magnetic" type="button"><span class="btn-label">Compare runs</span><span class="btn-orb" aria-hidden="true">↗</span></button>
+          </div>
+        </div></div>
+        <div id="compare-empty" class="compare-empty panel"><div class="core"><div class="empty-symbol"><i></i><i></i></div><h2>Ready to compare</h2><p>Complete one run in each mode, or run batch trials. Results will appear here.</p></div></div>
+        <div id="compare-results" class="compare-results" hidden>
+          <div class="compare-columns">
+            <article id="compare-v-card" class="panel compare-mode danger-mode"><div class="core spot">
+              <div class="compare-mode-top"><span class="compare-symbol">×</span><span>MODE 01 / VULNERABLE · <span id="compare-v-source">DEMO</span></span></div>
+              <h2 id="compare-v-title">Circular wait formed</h2><p id="compare-v-description">T1 holds A while requesting B. T2 holds B while requesting A.</p>
+              <div id="compare-v-result" class="compare-big danger-text">DEADLOCK</div>
+              <div class="compare-mini"><span>Peak blocked threads</span><strong id="compare-v-blocked">2 / 2</strong></div>
+              <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-v-cycle">Cycle found</strong></div>
+              <div class="compare-mini"><span>Peak threat score</span><strong id="compare-v-score">96 / 100</strong></div>
+              <div class="compare-mini"><span>Warning lead time</span><strong id="compare-v-lead">400 ms</strong></div>
+            </div></article>
+            <article id="compare-p-card" class="panel compare-mode safe-mode"><div class="core spot">
+              <div class="compare-mode-top"><span class="compare-symbol">✓</span><span>MODE 02 / PROTECTED · <span id="compare-p-source">DEMO</span></span></div>
+              <h2 id="compare-p-title">Both threads finished</h2><p id="compare-p-description">Requests are reordered before acquisition so both threads follow A → B.</p>
+              <div id="compare-p-result" class="compare-big safe-text">COMPLETE</div>
+              <div class="compare-mini"><span>Completed threads</span><strong id="compare-p-completed">2 / 2</strong></div>
+              <div class="compare-mini"><span>Wait-For Graph</span><strong id="compare-p-cycle">No cycle</strong></div>
+              <div class="compare-mini"><span>Peak threat score</span><strong id="compare-p-score">39 / 100</strong></div>
+              <div class="compare-mini"><span>Run duration</span><strong id="compare-p-duration">1200 ms</strong></div>
+            </div></article>
+          </div>
+          <div class="compare-insight panel"><div class="core"><span class="overline">The observation</span><p id="compare-insight-text">The two runs use the same resource pair. Review the measurements above.</p>
+            <button id="export-button" class="button button-ghost magnetic" type="button"><span class="btn-label">Export events as CSV</span><span class="btn-orb" aria-hidden="true">↓</span></button></div></div>
+        </div>
+
+        <div id="batch-comparison-section" class="panel batch-panel" hidden><div class="core">
+          <div class="panel-head">
+            <div><div class="overline">Statistical evaluation</div><h2 id="batch-table-title">Empirical multi-trial comparison</h2></div>
+            <span id="batch-badge" class="outline-badge is-safe">5 TRIALS PER MODE</span>
+          </div>
+          <div class="table-wrap">
+            <table class="batch-table">
+              <thead><tr><th>Experiment Mode</th><th>Trials</th><th>Deadlock Rate</th><th>Completion Rate</th><th>Mean Warning Lead</th><th>Detection Latency</th><th>Mean Peak Wait</th><th>Mean Run Duration</th></tr></thead>
+              <tbody id="batch-table-tbody"></tbody>
+            </table>
+          </div>
+          <div class="batch-stat-card"><h3>Scientific observation &amp; Coffman invariant</h3><p id="batch-insight-desc">Measured results appear here after the batch finishes.</p></div>
+        </div></div>
+      </section>
+
+      <!-- ============ METHOD ============ -->
+      <section id="view-method" class="view" aria-labelledby="method-title">
+        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Method &amp; definitions · 04</div><h1 id="method-title" class="split">Understand the <em>mechanism.</em></h1><p data-reveal>A short guide to the operating systems concepts shown in the lab.</p></div>
+        <div class="bento method-grid">
+          <article class="panel method-card span-4" data-reveal><div class="core spot"><span class="method-num">01 / Detect</span><svg class="method-art" viewBox="0 0 120 60" aria-hidden="true"><circle cx="24" cy="30" r="12"/><circle cx="96" cy="30" r="12"/><path class="flow" d="M38 22 C55 6 65 6 82 22"/><path class="flow" d="M82 38 C65 54 55 54 38 38"/></svg><h2>Wait-For Graph</h2><p>A node is a thread. An arrow T1 → T2 means T1 waits for a lock currently held by T2. In this two-thread, single-instance-lock demo, T1 → T2 → T1 confirms a deadlock.</p></div></article>
+          <article class="panel method-card span-4" data-reveal><div class="core spot"><span class="method-num">02 / Warn</span><svg class="method-art" viewBox="0 0 120 60" aria-hidden="true"><path class="flow" d="M4 52 L28 46 L48 40 L66 22 L84 14 L116 8"/><path class="dash" d="M0 20 H120"/></svg><h2>Contention score</h2><p>Opposite lock order, blocked threads, and longer waits increase the threat score. Crossing the threshold produces an early warning — an estimate, not proof.</p></div></article>
+          <article class="panel method-card span-4" data-reveal><div class="core spot"><span class="method-num">03 / Prevent</span><svg class="method-art" viewBox="0 0 120 60" aria-hidden="true"><path class="flow" d="M6 20 H114"/><path class="flow" d="M6 40 H114"/><circle cx="40" cy="20" r="4"/><circle cx="80" cy="40" r="4"/></svg><h2>Learned common order</h2><p>A cycle-free contention probe reveals a resource dependency. Protected workers then use one derived order before taking any lock — preventing circular wait.</p></div></article>
+          <article class="panel method-flow span-12" data-reveal><div class="core">
+            <div class="overline">The demonstration</div>
+            <div class="flow-steps"><div><b>01</b><span>Choose mode</span></div><i></i><div><b>02</b><span>Run or step</span></div><i></i><div><b>03</b><span>Watch graph &amp; score</span></div><i></i><div><b>04</b><span>Compare outcomes</span></div></div>
+          </div></article>
+          <article class="panel span-12" data-reveal><div class="core method-disclaimer"><span class="overline">Current stage</span><strong>Integrated demonstration</strong><p>The built-in scenarios are browser demonstrations. On the FastAPI site, the live button runs bounded Python-thread experiments and loads recorded events. A separately hosted static preview supports only playback and file import.</p></div></article>
+        </div>
+      </section>
+    </div>
+
+    <footer class="footer">
+      <div class="marquee" aria-hidden="true"><div class="marquee-track">
+        <span>Mutual exclusion</span><i>✦</i><span>Hold and wait</span><i>✦</i><span>No preemption</span><i>✦</i><span>Circular wait</span><i>✦</i><span>Break one — prevent all</span><i>✦</i>
+        <span>Mutual exclusion</span><i>✦</i><span>Hold and wait</span><i>✦</i><span>No preemption</span><i>✦</i><span>Circular wait</span><i>✦</i><span>Break one — prevent all</span><i>✦</i>
+      </div></div>
+      <div class="footer-row"><span>© Predictive Deadlock Lab</span><span>Designed &amp; initialized by Midhun Gereketi · Team case study</span><a class="repo-link" href="https://github.com/midhungereketi/predictive-deadlock-lab" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div>
+    </footer>
+  </main>
 </body>
 </html>
-

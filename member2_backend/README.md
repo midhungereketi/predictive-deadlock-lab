@@ -11,9 +11,11 @@
 
 The Member 2 backend is the core Operating Systems execution engine for the project. Its primary purpose is to provide **controlled, repeatable, multithreaded experiments using real OS threads and mutex locks**, comparing:
 1. **A vulnerable execution baseline** that demonstrates a real circular wait between two threads competing for shared mutex locks in conflicting orders (`T1: A → B` and `T2: B → A`).
-2. **A protected execution mode** that enforces a canonical global lock acquisition order (`Lock A → Lock B`) to systematically prevent the circular wait condition.
+2. **A protected execution mode** that derives a common lock order from a bounded, cycle-free contention probe, then enforces that order for both main workers.
 
 It logs fine-grained, timestamped execution events using the agreed shared schema so that **Member 3** can construct the Wait-For Graph, detect cycles, calculate contention heatmaps, compute threat scores, and perform predictive forecasting. It also integrates directly with **Member 1's** web dashboard for live trial execution and visualization.
+
+The integrated dashboard also offers a configurable 3–12 worker simulation at `POST /api/experiments/multi-thread`. All workers share locks A and B; vulnerable mode deliberately forms a cycle between T1 and T2 while additional workers contend, and protected mode makes every worker use A → B ordering. The endpoint returns the raw experiment response because the existing trial-v1 import schema is intentionally limited to its original two-thread demo.
 
 ---
 
@@ -51,14 +53,14 @@ In vulnerable mode, two worker threads compete for two shared mutex resources wi
 - **Thread T2:** Attempts to acquire **Lock B**, then **Lock A**.
 
 ### Synchronization & Repeatability Mechanism
-To eliminate race conditions and avoid relying on arbitrary `sleep()` durations:
+To make the circular wait reproducible, the runner uses a barrier and a controlled 120 ms observation interval:
 1. **Barrier Synchronization (`threading.Barrier(2)`):** 
    - T1 acquires Lock A.
    - T2 acquires Lock B.
    - Both threads wait on the barrier. This guarantees that T1 holds Lock A and T2 holds Lock B before either thread requests its second lock.
 2. **Conflicting Acquisition:**
    - T1 attempts to acquire Lock B (currently held by T2).
-   - T2 attempts to acquire Lock A (currently held by T1).
+   - Once T1's wait is observed, T2 requests Lock A after the observation interval. This permits a measurable warning before a cycle forms.
 3. **Confirmed Circular Wait:**
    - Active supervisor monitor inspects the Wait-For Graph:
      - $T_1 \rightarrow T_2$ ($T_1$ waits for Lock B held by $T_2$)
@@ -71,6 +73,8 @@ To eliminate race conditions and avoid relying on arbitrary `sleep()` durations:
    - Both threads join and terminate cleanly.
    - **No threads are left blocked in the background.**
 
+The current runner bounds lock waits within the API process. It does not launch each trial in a separate OS process; process isolation remains a possible hardening step.
+
 ---
 
 ## 4. Explanation of Protected Mode
@@ -79,8 +83,8 @@ File: `member2_backend/protected_experiment.py`
 
 The protected experiment demonstrates deadlock prevention by eliminating the **Circular Wait** Coffman condition.
 
-### Canonical Lock Ordering Rule
-- Common global order: **`Lock A → Lock B`**.
+### Adaptive Lock Ordering Rule
+- The short probe observes T1 holding A while requesting B, so its learned global order is **`Lock A → Lock B`** for this controlled schedule.
 - Every thread must acquire locks according to this total order, regardless of its original logical request sequence.
 - When `T1` requests `[A, B]`: Canonical order remains `[A, B]`.
 - When `T2` requests `[B, A]`: The lock manager normalizes the acquisition path to `[A, B]` *before* `T2` acquires its first lock.
@@ -93,7 +97,7 @@ The protected experiment demonstrates deadlock prevention by eliminating the **C
 4. Once `T1` releases the locks, `T2` acquires Lock A, then Lock B, finishes its critical section, and releases all locks.
 5. Both threads finish successfully, and a `complete` event is logged.
 
-> **Important Note:** This implementation enforces a static canonical global lock order as a reliable protected baseline. It is not yet the full runtime-adaptive lock-ordering research component.
+> **Scope:** The order is derived from observed contention before the main worker phase. It is not a mechanism for rearranging locks that a running worker already holds. An alternate B → A observation derives B → A, as covered by the policy test.
 
 ---
 

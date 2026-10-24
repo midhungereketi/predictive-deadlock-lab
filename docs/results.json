@@ -1,0 +1,394 @@
+{
+  "collected_at_utc": "2026-10-15T20:09:07.172888+00:00",
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "protocol": {
+    "threads": 2,
+    "resources": [
+      "A",
+      "B"
+    ],
+    "vulnerable_order": {
+      "T1": [
+        "A",
+        "B"
+      ],
+      "T2": [
+        "B",
+        "A"
+      ]
+    },
+    "protected_policy": "Order derived from a cycle-free contention probe before main workers start",
+    "vulnerable_observation_window_ms": 120,
+    "per_trial_timeout_seconds": 3.0
+  },
+  "comparison": {
+    "trials_per_mode": 10,
+    "vulnerable": {
+      "mode": "vulnerable",
+      "total_trials": 10,
+      "deadlock_count": 10,
+      "deadlock_rate_percent": 100.0,
+      "completion_count": 0,
+      "completion_rate_percent": 0.0,
+      "inconclusive_count": 0,
+      "mean_completion_time_ms": 0,
+      "mean_trial_runtime_ms": 813.6,
+      "mean_peak_score": 96,
+      "mean_peak_wait_ms": 809,
+      "mean_avg_wait_ms": 748.8,
+      "mean_warning_lead_time_ms": 120.4,
+      "mean_detection_latency_ms": 4.6,
+      "trials": [
+        {
+          "trial_id": "cmp-vuln-1792094937-1",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 828,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 813,
+          "avg_wait_ms": 750.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094938-2",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 757.0,
+          "warning_lead_time_ms": 110,
+          "detection_latency_ms": 15
+        },
+        {
+          "trial_id": "cmp-vuln-1792094939-3",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 749.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094940-4",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 749.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094941-5",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 797,
+          "avg_wait_ms": 734.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094942-6",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 757.0,
+          "warning_lead_time_ms": 110,
+          "detection_latency_ms": 15
+        },
+        {
+          "trial_id": "cmp-vuln-1792094942-7",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 749.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094943-8",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 812,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 749.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094944-9",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 828,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 812,
+          "avg_wait_ms": 749.5,
+          "warning_lead_time_ms": 125,
+          "detection_latency_ms": 0
+        },
+        {
+          "trial_id": "cmp-vuln-1792094945-10",
+          "status": "deadlock",
+          "deadlock_detected": true,
+          "completion_time_ms": 796,
+          "has_cycle": true,
+          "cycles": [
+            [
+              "T1",
+              "T2",
+              "T1"
+            ]
+          ],
+          "peak_score": 96,
+          "peak_wait_ms": 796,
+          "avg_wait_ms": 741.5,
+          "warning_lead_time_ms": 109,
+          "detection_latency_ms": 16
+        }
+      ]
+    },
+    "protected": {
+      "mode": "protected",
+      "total_trials": 10,
+      "deadlock_count": 0,
+      "deadlock_rate_percent": 0.0,
+      "completion_count": 10,
+      "completion_rate_percent": 100.0,
+      "inconclusive_count": 0,
+      "mean_completion_time_ms": 104.6,
+      "mean_trial_runtime_ms": 104.6,
+      "mean_peak_score": 72,
+      "mean_peak_wait_ms": 28.9,
+      "mean_avg_wait_ms": 28.2,
+      "mean_warning_lead_time_ms": null,
+      "mean_detection_latency_ms": null,
+      "trials": [
+        {
+          "trial_id": "cmp-prot-1792094946-1",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 109,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 30,
+          "avg_wait_ms": 30.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-2",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 110,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 31,
+          "avg_wait_ms": 31.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-3",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 93,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 30,
+          "avg_wait_ms": 30.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-4",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 110,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 14,
+          "avg_wait_ms": 14.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-5",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 92,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 31,
+          "avg_wait_ms": 31.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-6",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 110,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 30,
+          "avg_wait_ms": 23.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-7",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 109,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 32,
+          "avg_wait_ms": 32.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-8",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 94,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 31,
+          "avg_wait_ms": 31.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094946-9",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 109,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 30,
+          "avg_wait_ms": 30.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        },
+        {
+          "trial_id": "cmp-prot-1792094947-10",
+          "status": "completed",
+          "deadlock_detected": false,
+          "completion_time_ms": 110,
+          "has_cycle": false,
+          "cycles": [],
+          "peak_score": 72,
+          "peak_wait_ms": 30,
+          "avg_wait_ms": 30.0,
+          "warning_lead_time_ms": null,
+          "detection_latency_ms": null
+        }
+      ]
+    },
+    "comparative_summary": {
+      "deadlock_reduction_percent": 100.0,
+      "completion_increase_percent": 100.0,
+      "vulnerable_warning_lead_ms": 120.4,
+      "vulnerable_detection_latency_ms": 4.6
+    },
+    "insight": "Evaluated across 10 repeated real-thread trials per mode: Vulnerable mode produced a 100.0% deadlock rate (10/10 trials deadlocked with circular wait) with an average warning lead time of 120.4 ms. Protected mode achieved a 100.0% completion rate (10/10 trials completed successfully) with 0 observed deadlocks and 0 inconclusive trials under common lock ordering A -> B.",
+    "scientific_disclaimer": "Protected mode had 0 observed deadlocks and 0 inconclusive runs in this controlled sample. Its order is derived from a short, cycle-free contention probe before the main workers start. A common total order removes circular wait for these two single-instance locks; the result does not establish performance on arbitrary programs or schedules."
+  }
+}

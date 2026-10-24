@@ -4,7 +4,6 @@ Author: P. Satya Mani Shraavanth (Member 2)
 Course: BCSE303L - Operating Systems
 """
 
-import os
 from pathlib import Path
 from typing import Any, Dict
 from fastapi import FastAPI, HTTPException, Query, status
@@ -13,7 +12,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import API_HOST, API_PORT, DEFAULT_OVERALL_TIMEOUT_SECONDS
 from .experiment_runner import run_experiment, to_trial_v1
-from .schemas import ExperimentResult, RunExperimentRequest
+from .schemas import ExperimentResult, MultiThreadExperimentRequest, RunExperimentRequest
+from .multi_thread_experiment import run_multi_thread_experiment
+
+analysis_scorer = None
 
 app = FastAPI(
     title="Predictive Deadlock Lab — Experiment Backend",
@@ -21,7 +23,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for cross-origin frontend requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.get("/api/health", summary="Health check endpoint")
 def health_check() -> Dict[str, str]:
@@ -85,6 +85,26 @@ def run_custom_experiment(request: RunExperimentRequest) -> ExperimentResult:
 
 
 @app.post(
+    "/api/experiments/multi-thread",
+    response_model=ExperimentResult,
+    summary="Run a configurable 3–12 thread deadlock simulation",
+)
+def run_multi_thread_trial(request: MultiThreadExperimentRequest) -> ExperimentResult:
+    result = run_multi_thread_experiment(
+        mode=request.mode.value,
+        thread_count=request.thread_count,
+        timeout_seconds=request.timeout_seconds,
+        trial_id=request.trial_id,
+    )
+    if result.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.error or "Multi-thread experiment failed.",
+        )
+    return result
+
+
+@app.post(
     "/api/trials/{mode}",
     summary="Run experiment and return Member 1 trial-v1 JSON format",
 )
@@ -98,7 +118,7 @@ def run_trial_v1_post(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return to_trial_v1(result)
+    return _convert_trial_response(result)
 
 
 @app.get(
@@ -115,8 +135,37 @@ def run_trial_v1_get(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return to_trial_v1(result)
+    return _convert_trial_response(result)
 
+
+def _convert_trial_response(result: ExperimentResult) -> Dict[str, Any]:
+    if result.status not in ("deadlock", "completed"):
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT if result.status == "timeout"
+            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.error or "Experiment did not reach a valid terminal outcome.",
+        )
+    try:
+        return to_trial_v1(result, scorer=analysis_scorer)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid experiment event stream: {exc}",
+        ) from exc
+
+
+# Include Member 3 Analysis & Forecasting API router
+import sys
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+try:
+    from member3_analysis.api_routes import router as analysis_router, shared_scorer
+    analysis_scorer = shared_scorer
+    app.include_router(analysis_router)
+except Exception as e:
+    print(f"Warning: Member 3 analysis router could not be loaded: {e}")
 
 # Mount frontend static files if available
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"

@@ -1,0 +1,19 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environments and IDE
+.env
+.venv/
+.deps/
+.submission-build/
+env/
+venv/
+.idea/
+.vscode/
+
+# OS artifacts
+Thumbs.db
+.DS_Store

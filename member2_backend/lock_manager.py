@@ -14,17 +14,21 @@ from .event_logger import EventLogger
 class LockManager:
     """Manages shared mutex resources, ownership tracking, and acquisition ordering."""
 
-    def __init__(self, logger: EventLogger, resources: Optional[List[str]] = None):
+    def __init__(self, logger: EventLogger, resources: Optional[List[str]] = None,
+                 order: Optional[List[str]] = None):
         self.logger = logger
         self.resource_names = resources or ["A", "B"]
+        self.order = list(order or COMMON_LOCK_ORDER)
+        if set(self.order) != set(self.resource_names) or len(self.order) != len(self.resource_names):
+            raise ValueError("Lock order must contain each resource exactly once.")
         self._locks: Dict[str, threading.Lock] = {r: threading.Lock() for r in self.resource_names}
         self._meta_lock = threading.Lock()
         self._owners: Dict[str, str] = {}  # resource -> thread
         self._waiters: Dict[str, str] = {}  # thread -> resource
 
     def get_canonical_order(self, requested_resources: List[str]) -> List[str]:
-        """Normalize resource acquisition to the common global order (A -> B)."""
-        order_map = {res: idx for idx, res in enumerate(COMMON_LOCK_ORDER)}
+        """Normalize resource acquisition to this run's learned total order."""
+        order_map = {res: idx for idx, res in enumerate(self.order)}
         return sorted(requested_resources, key=lambda r: order_map.get(r, 999))
 
     def is_owned(self, resource_id: str) -> bool:
@@ -126,21 +130,18 @@ class LockManager:
             if current_owner != thread_id:
                 return False
             del self._owners[resource_id]
-
-        try:
+            # Keep the release and its event ordered before another worker can
+            # record an acquisition of the same lock.
             lock.release()
-        except RuntimeError:
-            pass  # Lock was not acquired
-
-        self.logger.log_event(
-            thread=thread_id,
-            action="released",
-            resource=resource_id,
-            owner=None,
-            wait_ms=0,
-            title=f"{thread_id} releases lock {resource_id}",
-            detail=f"Lock {resource_id} released and now available.",
-        )
+            self.logger.log_event(
+                thread=thread_id,
+                action="released",
+                resource=resource_id,
+                owner=None,
+                wait_ms=0,
+                title=f"{thread_id} releases lock {resource_id}",
+                detail=f"Lock {resource_id} released and now available.",
+            )
         return True
 
     def detect_deadlock_cycle(self) -> Optional[List[str]]:
@@ -161,8 +162,20 @@ class LockManager:
             if holder and holder != waiter:
                 wfg[waiter] = holder
 
-        # Check for circular wait between T1 and T2
-        if wfg.get("T1") == "T2" and wfg.get("T2") == "T1":
-            return ["T1", "T2", "T1"]
+        # Each thread waits for at most one resource, so the wait-for graph has
+        # at most one outgoing edge per node. Track the active path to find any
+        # cycle, regardless of how many worker threads are participating.
+        complete = set()
+        for start in sorted(wfg):
+            path = []
+            positions = {}
+            current = start
+            while current in wfg and current not in complete:
+                if current in positions:
+                    return path[positions[current]:] + [current]
+                positions[current] = len(path)
+                path.append(current)
+                current = wfg[current]
+            complete.update(path)
 
         return None

@@ -54,6 +54,35 @@ def test_api_run_custom_endpoint():
     assert data["status"] == "completed"
 
 
+def test_api_multi_thread_experiment_endpoint():
+    vulnerable = client.post(
+        "/api/experiments/multi-thread",
+        json={"mode": "vulnerable", "thread_count": 5, "timeout_seconds": 3.0},
+    )
+    assert vulnerable.status_code == 200
+    vulnerable_data = vulnerable.json()
+    assert vulnerable_data["status"] == "deadlock"
+    assert vulnerable_data["metrics"]["threads_started"] == 5
+    assert vulnerable_data["metrics"]["deadlock_cycle"] == ["T1", "T2", "T1"]
+
+    protected = client.post(
+        "/api/experiments/multi-thread",
+        json={"mode": "protected", "thread_count": 5, "timeout_seconds": 3.0},
+    )
+    assert protected.status_code == 200
+    protected_data = protected.json()
+    assert protected_data["status"] == "completed"
+    assert protected_data["metrics"]["threads_completed"] == 5
+
+
+def test_api_multi_thread_count_validation():
+    response = client.post(
+        "/api/experiments/multi-thread",
+        json={"mode": "protected", "thread_count": 13},
+    )
+    assert response.status_code == 422
+
+
 def test_api_trial_v1_endpoints():
     """Verify trial-v1 endpoints return schema-compliant JSON for frontend."""
     # Test POST /api/trials/vulnerable
@@ -71,6 +100,11 @@ def test_api_trial_v1_endpoints():
     assert p_data["schema_version"] == 1
     assert p_data["mode"] == "protected"
     assert p_data["status"] == "completed"
+    actions = [event["action"] for event in p_data["events"]]
+    assert "warning" in actions
+    assert actions.index("warning") < actions.index("policy_applied") < actions.index("complete")
+    assert all(not (event["waits"].get("T1") == "B" and event["waits"].get("T2") == "A")
+               for event in p_data["events"])
 
 
 def test_api_invalid_mode_handling():

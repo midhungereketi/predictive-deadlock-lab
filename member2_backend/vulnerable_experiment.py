@@ -7,7 +7,7 @@ Course: BCSE303L - Operating Systems
 import threading
 import time
 from typing import Optional
-from .config import VULNERABLE_LOCK_TIMEOUT_SECONDS
+from .config import VULNERABLE_LOCK_TIMEOUT_SECONDS, VULNERABLE_OBSERVATION_WINDOW_SECONDS
 from .event_logger import EventLogger
 from .lock_manager import LockManager
 from .schemas import ExperimentMetrics, ExperimentResult
@@ -112,6 +112,15 @@ def run_vulnerable_experiment(
             barrier.wait(timeout=2.0)
 
             # Step 2: Attempt to acquire Lock A (held by T1)
+            # Give the observer a measured interval after T1 begins waiting.
+            # This staged schedule is part of the controlled case study, not a
+            # claim about arbitrary OS scheduling in production systems.
+            observation_deadline = time.monotonic() + 0.3
+            while lock_mgr.get_waits_copy().get("T1") != "B":
+                if time.monotonic() >= observation_deadline:
+                    raise RuntimeError("T1 did not enter the expected wait state.")
+                time.sleep(0.001)
+            time.sleep(VULNERABLE_OBSERVATION_WINDOW_SECONDS)
             logger.log_event(
                 thread="T2",
                 action="requested",
@@ -157,7 +166,7 @@ def run_vulnerable_experiment(
                 action="deadlock_detected",
                 resource=None,
                 owner=None,
-                wait_ms=int((time.monotonic() - start_mono) * 1000),
+                wait_ms=0,
                 title="Deadlock detected",
                 detail="Circular wait confirmed in Wait-For Graph: T1 -> T2 -> T1.",
             )
@@ -177,6 +186,10 @@ def run_vulnerable_experiment(
     total_time_ms = int((time.monotonic() - start_mono) * 1000)
     timed_out_threads = (1 if t1_status["timed_out"] else 0) + (1 if t2_status["timed_out"] else 0)
     completed_threads = (1 if t1_status["acquired_B"] else 0) + (1 if t2_status["acquired_A"] else 0)
+    both_finished = not t1.is_alive() and not t2.is_alive()
+
+    if not cycle_detected and completed_threads == 2 and both_finished:
+        logger.log_event(thread="system", action="complete")
 
     metrics_raw = logger.get_metrics_summary()
     metrics = ExperimentMetrics(
@@ -193,10 +206,15 @@ def run_vulnerable_experiment(
     return ExperimentResult(
         trial_id=trial_id,
         mode="vulnerable",
-        status="deadlock" if cycle_detected else "completed",
+        status="deadlock" if cycle_detected else (
+            "completed" if completed_threads == 2 and both_finished else "timeout"
+        ),
         deadlock_detected=cycle_detected,
         completion_time_ms=total_time_ms,
         events=logger.get_events(),
         metrics=metrics,
-        error=None,
+        error=None if cycle_detected or (completed_threads == 2 and both_finished) else (
+            t1_status.get("error") or t2_status.get("error") or
+            "Trial ended without a confirmed cycle or both threads completing."
+        ),
     )

@@ -12,7 +12,7 @@ import pytest
 
 from member2_backend.event_logger import EventLogger
 from member2_backend.experiment_runner import run_experiment, to_trial_v1
-from member2_backend.schemas import Event
+from member2_backend.schemas import Event, ExperimentMetrics, ExperimentResult
 
 
 def test_event_schema_fields_and_monotonicity():
@@ -74,3 +74,28 @@ def test_trial_v1_json_schema_compliance():
     prot_res = run_experiment("protected", timeout_seconds=2.5)
     prot_v1 = to_trial_v1(prot_res)
     jsonschema.validate(instance=prot_v1, schema=schema)
+
+    first_warning = next(e for e in vuln_v1["events"] if e["risk_score"] >= 70 and e["action"] != "deadlock_detected")
+    assert first_warning["timestamp_ms"] < vuln_v1["events"][-1]["timestamp_ms"]
+    assert vuln_v1["events"][-1]["contention_count"] == sum(
+        e["action"] == "wait" for e in vuln_v1["events"]
+    )
+
+
+def test_trial_adapter_rejects_failed_or_unobserved_deadlock():
+    failed = ExperimentResult(
+        trial_id="failed", mode="vulnerable", status="timeout",
+        deadlock_detected=False, completion_time_ms=500, events=[],
+        metrics=ExperimentMetrics(threads_started=2), error="Timed out",
+    )
+    with pytest.raises(ValueError, match="Cannot display timeout"):
+        to_trial_v1(failed)
+
+    forged = ExperimentResult(
+        trial_id="forged", mode="vulnerable", status="deadlock",
+        deadlock_detected=True, completion_time_ms=100,
+        events=[Event(time=0.1, thread="system", action="deadlock_detected")],
+        metrics=ExperimentMetrics(threads_started=2),
+    )
+    with pytest.raises(ValueError, match="observed Wait-For Graph cycle"):
+        to_trial_v1(forged)

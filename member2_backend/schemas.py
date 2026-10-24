@@ -86,6 +86,14 @@ class RunExperimentRequest(BaseModel):
     trial_id: Optional[str] = Field(None, max_length=80, description="Optional custom trial identifier")
 
 
+class MultiThreadExperimentRequest(BaseModel):
+    """Request payload for a configurable multi-thread experiment."""
+    mode: ExperimentMode = Field(ExperimentMode.VULNERABLE, description="Experiment mode to run")
+    thread_count: int = Field(6, ge=3, le=12, description="Number of worker threads to simulate")
+    timeout_seconds: float = Field(5.0, ge=0.5, le=30.0, description="Maximum execution timeout in seconds")
+    trial_id: Optional[str] = Field(None, max_length=80, description="Optional custom trial identifier")
+
+
 # --- Schemas for Member 1's trial-v1 JSON contract adapter ---
 
 class TrialV1Event(BaseModel):

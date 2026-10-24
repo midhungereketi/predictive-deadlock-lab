@@ -8,6 +8,7 @@ import threading
 import pytest
 from member2_backend.protected_experiment import run_protected_experiment
 from member2_backend.experiment_runner import run_experiment
+from member2_backend.adaptive_policy import order_from_observation
 
 
 def test_protected_completes_without_cycle():
@@ -35,6 +36,9 @@ def test_protected_completes_without_cycle():
     assert "start" in actions
     assert "complete" in actions
     assert "deadlock_detected" not in actions
+    assert "warning" in actions
+    assert actions.index("warning") < actions.index("policy_applied")
+    assert result.events[actions.index("warning")].time < result.events[actions.index("complete")].time
 
     # Check that policy_applied was recorded for reordering T2
     assert "policy_applied" in actions
@@ -47,6 +51,11 @@ def test_protected_completes_without_cycle():
         assert e.resource in ("A", "B", None)
         assert e.owner in ("T1", "T2", None)
         assert isinstance(e.wait_ms, int)
+
+
+def test_adaptive_order_comes_from_observed_dependency():
+    assert order_from_observation({"A": "T1", "B": "T2"}, {"T1": "B"}, ["A", "B"]) == ["A", "B"]
+    assert order_from_observation({"A": "T1", "B": "T2"}, {"T2": "A"}, ["A", "B"]) == ["B", "A"]
 
 
 def test_protected_repeated_runs_reliability():
