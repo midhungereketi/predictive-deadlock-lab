@@ -15,6 +15,8 @@ The Member 2 backend is the core Operating Systems execution engine for the proj
 
 It logs fine-grained, timestamped execution events using the agreed shared schema so that **Member 3** can construct the Wait-For Graph, detect cycles, calculate contention heatmaps, compute threat scores, and perform predictive forecasting. It also integrates directly with **Member 1's** web dashboard for live trial execution and visualization.
 
+The integrated dashboard also offers a configurable 3–12 worker simulation at `POST /api/experiments/multi-thread`. All workers share locks A and B; vulnerable mode deliberately forms a cycle between T1 and T2 while additional workers contend, and protected mode makes every worker use A → B ordering. The endpoint returns the raw experiment response because the existing trial-v1 import schema is intentionally limited to its original two-thread demo.
+
 ---
 
 ## 2. How it Fits into the Project Architecture

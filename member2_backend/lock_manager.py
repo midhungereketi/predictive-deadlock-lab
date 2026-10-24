@@ -162,8 +162,20 @@ class LockManager:
             if holder and holder != waiter:
                 wfg[waiter] = holder
 
-        # Check for circular wait between T1 and T2
-        if wfg.get("T1") == "T2" and wfg.get("T2") == "T1":
-            return ["T1", "T2", "T1"]
+        # Each thread waits for at most one resource, so the wait-for graph has
+        # at most one outgoing edge per node. Track the active path to find any
+        # cycle, regardless of how many worker threads are participating.
+        complete = set()
+        for start in sorted(wfg):
+            path = []
+            positions = {}
+            current = start
+            while current in wfg and current not in complete:
+                if current in positions:
+                    return path[positions[current]:] + [current]
+                positions[current] = len(path)
+                path.append(current)
+                current = wfg[current]
+            complete.update(path)
 
         return None

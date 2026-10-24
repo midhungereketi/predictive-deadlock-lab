@@ -7,11 +7,13 @@ Course: BCSE303L - Operating Systems
 from pathlib import Path
 from typing import Any, Dict
 from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import API_HOST, API_PORT, DEFAULT_OVERALL_TIMEOUT_SECONDS
 from .experiment_runner import run_experiment, to_trial_v1
-from .schemas import ExperimentResult, RunExperimentRequest
+from .schemas import ExperimentResult, MultiThreadExperimentRequest, RunExperimentRequest
+from .multi_thread_experiment import run_multi_thread_experiment
 
 analysis_scorer = None
 
@@ -19,6 +21,14 @@ app = FastAPI(
     title="Predictive Deadlock Lab — Experiment Backend",
     description="Multithreaded trial execution engine for Operating Systems case study.",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.get("/api/health", summary="Health check endpoint")
@@ -70,6 +80,26 @@ def run_custom_experiment(request: RunExperimentRequest) -> ExperimentResult:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.error or "Experiment failed.",
+        )
+    return result
+
+
+@app.post(
+    "/api/experiments/multi-thread",
+    response_model=ExperimentResult,
+    summary="Run a configurable 3–12 thread deadlock simulation",
+)
+def run_multi_thread_trial(request: MultiThreadExperimentRequest) -> ExperimentResult:
+    result = run_multi_thread_experiment(
+        mode=request.mode.value,
+        thread_count=request.thread_count,
+        timeout_seconds=request.timeout_seconds,
+        trial_id=request.trial_id,
+    )
+    if result.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.error or "Multi-thread experiment failed.",
         )
     return result
 

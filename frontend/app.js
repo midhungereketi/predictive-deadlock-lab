@@ -260,9 +260,9 @@ function renderTimeline() {
     els.timelineBottom.textContent = "Waiting for experiment";
     return;
   }
-  els.timeline.innerHTML = sequence().slice(1, step + 1).map(event => {
+  els.timeline.innerHTML = sequence().slice(1, step + 1).map((event, index) => {
     const symbol = event.kind === "danger" ? "×" : event.kind === "warning" ? "!" : event.kind === "safe" ? "✓" : "•";
-    return '<div class="event is-' + event.kind + '"><span class="event-time">' + String(event.ms).padStart(4, "0") + 'ms</span><span class="event-symbol">' + symbol + '</span><div class="event-copy"><strong>' + escapeHtml(event.title) + '</strong><span>' + escapeHtml(event.detail) + '</span></div></div>';
+    return '<div class="event is-' + event.kind + (index === step - 1 ? ' is-new' : '') + '"><span class="event-time">' + String(event.ms).padStart(4, "0") + 'ms</span><span class="event-symbol">' + symbol + '</span><div class="event-copy"><strong>' + escapeHtml(event.title) + '</strong><span>' + escapeHtml(event.detail) + '</span></div></div>';
   }).join("");
   els.timeline.scrollTop = els.timeline.scrollHeight;
   els.timelineBottom.textContent = step === sequence().length - 1 ? "Scenario complete · " + trialMeta[mode].source + " data" : "Stepping through " + trialMeta[mode].source + " events";
@@ -359,7 +359,7 @@ function renderAnalysis(frame) {
 
   els.analysisBars.innerHTML = history.map((item, index) => {
     const state = item.score >= 85 ? "danger" : item.score >= 70 ? "warn" : "";
-    return '<div class="analysis-bar-wrap"><span class="analysis-bar-value">' + item.score + '</span><span class="analysis-bar ' + state + '" style="height:' + Math.max(item.score, 3) + '%"></span><span class="analysis-bar-label">' + String(index).padStart(2, "0") + '</span></div>';
+    return '<div class="analysis-bar-wrap" style="--i:' + index + '"><span class="analysis-bar-value">' + item.score + '</span><span class="analysis-bar ' + state + '" style="--i:' + index + ';height:' + Math.max(item.score, 3) + '%"></span><span class="analysis-bar-label">' + String(index).padStart(2, "0") + '</span></div>';
   }).join("");
   els.analysisOwnerA.textContent = frame.owners.A || "FREE";
   els.analysisOwnerB.textContent = frame.owners.B || "FREE";
@@ -420,11 +420,28 @@ function render() {
   els.restoreButton.hidden = source.source === "demo";
   els.scenarioOutcome.textContent = source.source !== "demo" ? "Viewing recorded trial " + source.runId :
     mode === "protected" ? "Common order applied before lock acquisition" : "Unordered acquisition can create a circular wait";
+  const last = step === sequence().length - 1;
+  const cycle = DeadlockTrialData.hasCycle(frame);
+  document.dispatchEvent(new CustomEvent("lab:frame", { detail: {
+    frame, mode, step, last, threshold: scoringConfig.threshold,
+    state: cycle || (trialMeta[mode].status === "deadlock" && last) ? "danger"
+      : trialMeta[mode].status === "completed" && last ? "safe"
+      : frame.score >= scoringConfig.threshold ? "warning" : "calm"
+  } }));
 }
 
 const viewNames = { lab: "SIMULATION LAB", analysis: "ANALYSIS", compare: "COMPARE RUNS", method: "HOW IT WORKS" };
 function showView(name) {
   if (!viewNames[name]) return;
+  if (document.startViewTransition && !showView.inTransition && !document.getElementById("view-" + name).classList.contains("is-visible")) {
+    showView.inTransition = true;
+    document.startViewTransition(() => applyView(name)).finished.finally(() => { showView.inTransition = false; });
+  } else {
+    applyView(name);
+  }
+}
+
+function applyView(name) {
   document.querySelectorAll(".view").forEach(section => section.classList.toggle("is-visible", section.id === "view-" + name));
   document.querySelectorAll(".nav-item").forEach(button => {
     const active = button.dataset.view === name;
@@ -441,7 +458,8 @@ function showView(name) {
   } else {
     els.sourceBadge.textContent = trialMeta[mode].source === "demo" ? "DEMO DATA" : trialMeta[mode].source === "live" ? "LIVE TRIAL" : "IMPORTED TRIAL";
   }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "instant" });
+  document.dispatchEvent(new CustomEvent("lab:view", { detail: { name } }));
 }
 
 function exportCsv() {
@@ -569,6 +587,242 @@ const liveRunBtn = document.getElementById("live-run-button");
 if (liveRunBtn) {
   liveRunBtn.addEventListener("click", () => runLiveTrial(mode));
 }
+
+let isRunningMultiThread = false;
+function renderMultiThreadResult(result) {
+  const panel = document.getElementById("multi-thread-results");
+  const badge = document.getElementById("multi-thread-status");
+  const graph = document.getElementById("multi-thread-graph");
+  const workerList = document.getElementById("multi-thread-worker-list");
+  const metrics = result.metrics;
+  const threadIds = Array.from({ length: metrics.threads_started }, (_, index) => "T" + (index + 1));
+  const owners = {};
+  const waits = {};
+  let deadlockSnapshot = null;
+  let peakSnapshot = null;
+  let peakWaitCount = -1;
+  let finalSnapshot = null;
+  let completedAtOutcome = new Set();
+
+  for (const event of result.events) {
+    if (event.action === "acquired" && event.resource) {
+      owners[event.resource] = event.thread;
+      delete waits[event.thread];
+    } else if (event.action === "released" && event.resource && owners[event.resource] === event.thread) {
+      delete owners[event.resource];
+    } else if (event.action === "waiting" && event.resource) {
+      waits[event.thread] = event.resource;
+    } else if (event.action === "timeout") {
+      delete waits[event.thread];
+    }
+
+    const currentWaitCount = Object.keys(waits).length;
+    if (currentWaitCount > peakWaitCount) {
+      peakWaitCount = currentWaitCount;
+      peakSnapshot = { owners: { ...owners }, waits: { ...waits }, action: "peak_contention" };
+    }
+
+    if (event.action === "deadlock_detected") {
+      deadlockSnapshot = { owners: { ...owners }, waits: { ...waits }, action: event.action };
+    } else if (event.action === "complete") {
+      finalSnapshot = { owners: { ...owners }, waits: { ...waits }, action: event.action };
+    }
+  }
+
+  // Choose the observed snapshot that best demonstrates the multi-thread dependencies:
+  let observed = null;
+  if (result.status === "deadlock") {
+    // If peakSnapshot captures contending waiters alongside the cycle, use peakSnapshot
+    if (deadlockSnapshot && Object.keys(deadlockSnapshot.waits).length >= (peakSnapshot ? Object.keys(peakSnapshot.waits).length : 0)) {
+      observed = deadlockSnapshot;
+    } else {
+      observed = peakSnapshot || deadlockSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "snapshot" };
+    }
+  } else if (result.status === "completed") {
+    completedAtOutcome = new Set(threadIds);
+    // For protected mode, show the peak contention dependency graph if workers queued during the run
+    observed = (peakSnapshot && Object.keys(peakSnapshot.waits).length > 0)
+      ? peakSnapshot
+      : (finalSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "complete" });
+  } else {
+    observed = peakSnapshot || deadlockSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "snapshot" };
+  }
+
+  const cycleNodes = new Set(metrics.deadlock_cycle || []);
+
+  const centerX = 360, centerY = 210, radiusX = 275, radiusY = 150;
+  const nodeRadius = threadIds.length > 8 ? 24 : 28;
+  const positions = {};
+  threadIds.forEach((threadId, index) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2 / threadIds.length);
+    positions[threadId] = {
+      x: centerX + Math.cos(angle) * radiusX,
+      y: centerY + Math.sin(angle) * radiusY
+    };
+  });
+
+  const edges = Object.entries(observed.waits).map(([waiter, resource]) => ({
+    waiter,
+    owner: observed.owners[resource],
+    resource
+  })).filter(edge => edge.owner && positions[edge.waiter] && positions[edge.owner]);
+
+  // Identify any mutual waiting pairs to guarantee cycle detection even if metadata is missing
+  edges.forEach(edge => {
+    if (edges.some(other => other.waiter === edge.owner && other.owner === edge.waiter)) {
+      cycleNodes.add(edge.waiter);
+      cycleNodes.add(edge.owner);
+    }
+  });
+
+  const edgeMarkup = edges.map(edge => {
+    const from = positions[edge.waiter], to = positions[edge.owner];
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const unitX = dx / length, unitY = dy / length;
+    const nx = -unitY, ny = unitX; // Normal vector pointing perpendicular (rightward)
+
+    const isMutual = edges.some(other => other.waiter === edge.owner && other.owner === edge.waiter);
+    const isCycle = cycleNodes.has(edge.waiter) && cycleNodes.has(edge.owner);
+
+    // Mutual cycle edges curve distinctly in opposite directions; unidirectional edges curve gently
+    const curveOffset = isMutual ? 42 : 14;
+    const ctrlX = (from.x + to.x) / 2 + nx * curveOffset;
+    const ctrlY = (from.y + to.y) / 2 + ny * curveOffset;
+
+    const cdx1 = ctrlX - from.x, cdy1 = ctrlY - from.y;
+    const clen1 = Math.hypot(cdx1, cdy1) || 1;
+    const startX = from.x + (cdx1 / clen1) * (nodeRadius + 2);
+    const startY = from.y + (cdy1 / clen1) * (nodeRadius + 2);
+
+    const cdx2 = to.x - ctrlX, cdy2 = to.y - ctrlY;
+    const clen2 = Math.hypot(cdx2, cdy2) || 1;
+    const endX = to.x - (cdx2 / clen2) * (nodeRadius + 9);
+    const endY = to.y - (cdy2 / clen2) * (nodeRadius + 9);
+
+    const pathData = 'M ' + startX.toFixed(1) + ' ' + startY.toFixed(1) + ' Q ' + ctrlX.toFixed(1) + ' ' + ctrlY.toFixed(1) + ' ' + endX.toFixed(1) + ' ' + endY.toFixed(1);
+
+    // Label coordinates at midpoint of quadratic curve
+    const midX = 0.25 * startX + 0.5 * ctrlX + 0.25 * endX;
+    const midY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
+    const labelX = midX + nx * (isMutual ? 10 : 6);
+    const labelY = midY + ny * (isMutual ? 10 : 6) + 4;
+
+    const markerId = isCycle ? "multi-arrow-danger" : "multi-arrow";
+    const edgeClass = "multi-graph-edge" + (isCycle ? " is-cycle" : "");
+    const labelClass = "multi-graph-edge-label" + (isCycle ? " is-cycle" : "");
+
+    return '<path class="' + edgeClass + '" d="' + pathData + '" marker-end="url(#' + markerId + ')"/>' +
+      '<text class="' + labelClass + '" x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '">waits ' + escapeHtml(edge.resource) + '</text>';
+  }).join("");
+
+  const nodeMarkup = threadIds.map(threadId => {
+    const position = positions[threadId];
+    const held = Object.entries(observed.owners).filter(([, owner]) => owner === threadId).map(([resource]) => resource);
+    const isCycle = cycleNodes.has(threadId);
+    const isWaiting = Boolean(observed.waits[threadId]);
+    const state = observed.waits[threadId]
+      ? "WAITS " + observed.waits[threadId] + (held.length ? " · HOLDS " + held.join("+") : "")
+      : completedAtOutcome.has(threadId) && !held.length ? "COMPLETE"
+      : held.length ? "HOLDS " + held.join("+") : "READY";
+    const className = (isCycle ? " is-cycle" : "") + (isWaiting ? " is-waiting" : held.length ? " is-holding" : "");
+    return '<g class="multi-graph-node' + className + '" transform="translate(' + position.x.toFixed(1) + ' ' + position.y.toFixed(1) + ')">' +
+      '<circle r="' + nodeRadius + '"/>' +
+      '<text class="multi-graph-id" y="-2">' + threadId + '</text>' +
+      '<text class="multi-graph-state" y="' + (nodeRadius + 17) + '">' + escapeHtml(state) + '</text></g>';
+  }).join("");
+
+  graph.innerHTML = '<defs>' +
+    '<marker id="multi-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L8,3.5 z" fill="#ffb547"/></marker>' +
+    '<marker id="multi-arrow-danger" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L8,3.5 z" fill="#ff4d6d"/></marker>' +
+    '</defs>' +
+    '<ellipse class="multi-graph-orbit" cx="' + centerX + '" cy="' + centerY + '" rx="' + radiusX + '" ry="' + radiusY + '"/>' +
+    edgeMarkup + nodeMarkup;
+  graph.setAttribute("aria-label", threadIds.length + " worker nodes and " + edges.length + " wait-for edges");
+
+  workerList.innerHTML = threadIds.map(threadId => {
+    const held = Object.entries(observed.owners).filter(([, owner]) => owner === threadId).map(([resource]) => resource);
+    const isCycle = cycleNodes.has(threadId);
+    const isWaiting = Boolean(observed.waits[threadId]);
+    const waiterTarget = observed.waits[threadId] ? observed.owners[observed.waits[threadId]] : null;
+    const state = isCycle
+      ? "Deadlocked in cycle · waits for " + observed.waits[threadId] + (waiterTarget ? " (held by " + waiterTarget + ")" : "") + (held.length ? " · holds " + held.join(", ") : "")
+      : isWaiting
+        ? "Waiting for " + observed.waits[threadId] + (waiterTarget ? " (held by " + waiterTarget + ")" : "") + (held.length ? " · holds " + held.join(", ") : "")
+        : completedAtOutcome.has(threadId) && !held.length ? "Completed safely"
+        : held.length ? "Holds " + held.join(", ") : "Ready / idle";
+    const className = isCycle ? "is-cycle" : isWaiting ? "is-waiting" : held.length ? "is-holding" : "";
+    return '<div class="multi-worker-row"><strong>' + threadId + '</strong><span class="' + className + '">' + escapeHtml(state) + '</span></div>';
+  }).join("");
+
+  const statusText = result.status === "deadlock" ? "CYCLE DETECTED" : result.status.toUpperCase();
+  badge.textContent = statusText;
+  badge.className = "outline-badge" + (result.status === "deadlock" ? " is-danger" : result.status === "completed" ? " is-safe" : " is-warning");
+
+  const isProtectedShowingContention = result.status === "completed" && edges.length > 0;
+  document.getElementById("multi-thread-worker-heading").textContent = result.status === "deadlock"
+    ? "Worker state at deadlock cycle snapshot"
+    : isProtectedShowingContention
+      ? "Worker state during peak contention (all safely completed)"
+      : "Worker state at completion";
+
+  document.getElementById("multi-thread-summary").textContent = result.status === "deadlock"
+    ? "A circular wait cycle (" + (metrics.deadlock_cycle || []).join(" ⇄ ") + ") formed! Remaining workers contended on the same locks and waited. Across the trial, " +
+      metrics.threads_completed + " completed and " + metrics.threads_timed_out + " timed out within bounded waits."
+    : result.status === "completed"
+      ? "All " + metrics.threads_completed + " workers completed safely with the canonical A → B lock order. As shown in the graph, threads queued without forming any circular wait."
+      : result.error || "The run ended without a confirmed terminal outcome.";
+
+  document.getElementById("multi-thread-metric-workers").textContent = metrics.threads_started;
+  document.getElementById("multi-thread-metric-completed").textContent = metrics.threads_completed;
+  document.getElementById("multi-thread-metric-blocked").textContent = Object.keys(observed.waits).length;
+  document.getElementById("multi-thread-metric-contention").textContent = metrics.contention_count;
+  document.getElementById("multi-thread-metric-runtime").textContent = result.completion_time_ms + " ms";
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function runMultiThreadTrial() {
+  if (isRunningMultiThread) return;
+  isRunningMultiThread = true;
+  const button = document.getElementById("multi-thread-run-button");
+  const threadCount = Number(document.getElementById("multi-thread-count").value);
+  button.disabled = true;
+  button.textContent = "⏳ Running " + threadCount + " workers...";
+  showImportFeedback("Starting " + threadCount + " real worker threads in " + mode + " mode against shared locks A and B...", true);
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    const response = await fetch("/api/experiments/multi-thread", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, thread_count: threadCount, timeout_seconds: 5 }),
+      signal: controller.signal
+    });
+    window.clearTimeout(timeoutId);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.detail || "Backend returned status " + response.status);
+    }
+    const result = await response.json();
+    renderMultiThreadResult(result);
+    showImportFeedback(
+      result.status === "deadlock"
+        ? "Multi-thread trial complete: a wait-for cycle was detected with " + threadCount + " workers."
+        : "Multi-thread trial complete: " + result.metrics.threads_completed + " of " + threadCount + " workers finished.",
+      result.status === "deadlock" || result.status === "completed"
+    );
+  } catch (error) {
+    const message = error.name === "AbortError" ? "Multi-thread request timed out." : error.message;
+    showImportFeedback("Could not run the multi-thread simulation: " + message + ". Verify the FastAPI backend is running.", false);
+  } finally {
+    isRunningMultiThread = false;
+    button.disabled = false;
+    button.textContent = "⚡ Run multi-thread trial";
+  }
+}
+
+document.getElementById("multi-thread-run-button").addEventListener("click", runMultiThreadTrial);
 
 let isRunningBatch = false;
 async function runBatchComparison() {
@@ -698,5 +952,3 @@ setupWeightControls();
 
 window.DeadlockLab = { loadTrial, restoreDemo, runLiveTrial, runBatchComparison };
 render();
-
-
