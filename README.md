@@ -27,7 +27,7 @@ python -m uvicorn member2_backend.api:app --reload --host 127.0.0.1 --port 8000
 ```
 Open **http://127.0.0.1:8000/** in your browser. You can run the built-in demo, click **"⚡ Run live backend trial"** to execute real OS threads, or click **"⚡ Run Batch Trials (5 Each)"** in the Compare tab for empirical statistical evaluation!
 
-For a configurable larger run, select **3–12 worker threads** beside the live-run button and click **"⚡ Run multi-thread trial"**. Vulnerable mode synchronizes two workers into a real circular wait while the remaining workers contend for the same locks; protected mode makes all selected workers acquire locks in the same A → B order. The dashboard shows the resulting wait-for graph and per-worker states. These trials use two shared mutexes and are bounded to prevent workers from hanging indefinitely.
+For a configurable larger run, set **2–32 threads** with the slider or number box beside the live-run button and click **"⚡ Run N threads"**. Each run starts that many real OS threads on a ring of the same number of locks (worker *Ti* needs locks *Ri* and *Ri+1*, wrapping round to R1). Vulnerable mode makes every thread hold its first lock before requesting the next, so the wait-for graph is one cycle through **all** N threads; the supervisor detects it and recovers by aborting the highest-numbered thread. Protected mode takes locks in global order (lower number first), so all N threads finish. The dashboard shows the wait-for graph, a per-thread table with OS thread ids and outcomes, and a timeline of when each thread waited and held locks.
 
 ### 3. Run Automated Tests
 ```bash

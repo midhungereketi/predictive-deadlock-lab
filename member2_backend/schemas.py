@@ -8,6 +8,8 @@ from enum import Enum
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from .config import MULTI_THREAD_MAX, MULTI_THREAD_MIN
+
 
 class ExperimentMode(str, Enum):
     VULNERABLE = "vulnerable"
@@ -45,7 +47,7 @@ class Event(BaseModel):
         owner: Current owner of the resource ('T1', 'T2', or None).
         wait_ms: Duration in milliseconds thread waited for the resource (0 if none).
     """
-    time: float = Field(..., description="Monotonic elapsed time in seconds from trial start")
+    time: float = Field(..., description="Elapsed time (high-resolution monotonic clock) in seconds from trial start")
     thread: str = Field(..., description="Thread identifier: 'T1', 'T2', or 'system'")
     action: str = Field(..., description="Action name conforming to documented event types")
     resource: Optional[str] = Field(None, description="Resource name: 'A', 'B', or None")
@@ -67,6 +69,24 @@ class ExperimentMetrics(BaseModel):
     deadlock_cycle: Optional[List[str]] = Field(None, description="Confirmed cycle nodes in Wait-For Graph")
 
 
+class WorkerReport(BaseModel):
+    """Per-thread outcome for the configurable N-thread experiment."""
+    thread: str = Field(..., description="Logical worker identifier, e.g. 'T7'")
+    native_id: Optional[int] = Field(None, description="Operating-system thread id reported by the kernel")
+    lock_order: List[str] = Field(..., description="Locks in the order this worker acquires them")
+    outcome: str = Field(..., description="'completed', 'aborted' (deadlock victim), 'timed_out', or 'error'")
+    waited_ms: int = Field(0, description="Total time this worker spent blocked on locks")
+    finished_ms: Optional[int] = Field(None, description="Milliseconds from trial start until the worker exited")
+
+
+class WaitForSnapshot(BaseModel):
+    """Lock ownership and waits captured from the live lock manager."""
+    label: str = Field(..., description="'deadlock' (cycle at detection) or 'peak_contention'")
+    time_ms: float = Field(0.0, description="Milliseconds from trial start when captured")
+    owners: Dict[str, str] = Field(default_factory=dict, description="Lock -> owning thread")
+    waits: Dict[str, str] = Field(default_factory=dict, description="Blocked thread -> lock it needs")
+
+
 class ExperimentResult(BaseModel):
     """Complete response contract for experiment invocation (Section 10)."""
     trial_id: str = Field(..., description="Unique trial identifier")
@@ -77,6 +97,10 @@ class ExperimentResult(BaseModel):
     events: List[Event] = Field(default_factory=list, description="Chronological execution event stream")
     metrics: ExperimentMetrics = Field(..., description="Aggregate execution metrics")
     error: Optional[str] = Field(None, description="Error message if run failed or timed out")
+    resources: Optional[List[str]] = Field(None, description="Locks used by an N-thread run")
+    workers: Optional[List[WorkerReport]] = Field(None, description="Per-thread outcomes for an N-thread run")
+    snapshot: Optional[WaitForSnapshot] = Field(None, description="Wait-for state captured during an N-thread run")
+    victim: Optional[str] = Field(None, description="Thread aborted to recover from the deadlock")
 
 
 class RunExperimentRequest(BaseModel):
@@ -89,7 +113,8 @@ class RunExperimentRequest(BaseModel):
 class MultiThreadExperimentRequest(BaseModel):
     """Request payload for a configurable multi-thread experiment."""
     mode: ExperimentMode = Field(ExperimentMode.VULNERABLE, description="Experiment mode to run")
-    thread_count: int = Field(6, ge=3, le=12, description="Number of worker threads to simulate")
+    thread_count: int = Field(6, ge=MULTI_THREAD_MIN, le=MULTI_THREAD_MAX,
+                              description="Number of real worker threads (and ring locks) to run")
     timeout_seconds: float = Field(5.0, ge=0.5, le=30.0, description="Maximum execution timeout in seconds")
     trial_id: Optional[str] = Field(None, max_length=80, description="Optional custom trial identifier")
 

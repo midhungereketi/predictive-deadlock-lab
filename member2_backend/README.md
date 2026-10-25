@@ -15,7 +15,7 @@ The Member 2 backend is the core Operating Systems execution engine for the proj
 
 It logs fine-grained, timestamped execution events using the agreed shared schema so that **Member 3** can construct the Wait-For Graph, detect cycles, calculate contention heatmaps, compute threat scores, and perform predictive forecasting. It also integrates directly with **Member 1's** web dashboard for live trial execution and visualization.
 
-The integrated dashboard also offers a configurable 3–12 worker simulation at `POST /api/experiments/multi-thread`. All workers share locks A and B; vulnerable mode deliberately forms a cycle between T1 and T2 while additional workers contend, and protected mode makes every worker use A → B ordering. The endpoint returns the raw experiment response because the existing trial-v1 import schema is intentionally limited to its original two-thread demo.
+The integrated dashboard also offers a configurable 2–32 thread experiment at `POST /api/experiments/multi-thread` (`multi_thread_experiment.py`). N real threads share a ring of N locks, and worker *Ti* needs *Ri* and *Ri+1* (the dining-philosophers arrangement). In vulnerable mode every worker holds its first lock and then requests the next, so the Wait-For Graph is a single cycle through all N threads; the supervisor detects it and recovers by cancelling the wait of the highest-numbered thread (`LockManager.acquire(..., cancel_event=...)`). In protected mode each worker takes the lower-numbered lock first, which removes circular wait, and all N complete. The response adds per-thread `workers`, the captured `snapshot`, and the `victim`. The existing trial-v1 import schema stays limited to its original two-thread demo.
 
 ---
 

@@ -51,22 +51,25 @@ class LockManager:
         with self._meta_lock:
             return dict(self._waiters)
 
-    def acquire(self, thread_id: str, resource_id: str, timeout: float = 1.0) -> bool:
+    def acquire(self, thread_id: str, resource_id: str, timeout: float = 1.0,
+                cancel_event: Optional[threading.Event] = None) -> bool:
         """Attempt to acquire a resource with bounded wait and event logging.
 
         Args:
             thread_id: Thread requesting the lock ('T1' or 'T2').
             resource_id: Mutex identifier ('A' or 'B').
             timeout: Maximum wait time in seconds.
+            cancel_event: Optional event that aborts the wait when set, used to
+                recover from a detected deadlock by preempting a victim thread.
 
         Returns:
-            True if acquired successfully, False if timed out.
+            True if acquired successfully, False if timed out or aborted.
         """
         if resource_id not in self._locks:
             raise ValueError(f"Unknown resource: {resource_id}")
 
         lock = self._locks[resource_id]
-        wait_start = time.monotonic()
+        wait_start = time.perf_counter()
         observed_wait_ms = 0
 
         # Step 1: Check initial status and register waiting if held
@@ -85,8 +88,20 @@ class LockManager:
                 )
 
         # Step 2: Attempt bounded lock acquisition
-        acquired = lock.acquire(timeout=timeout)
-        wait_elapsed = time.monotonic() - wait_start
+        if cancel_event is None:
+            acquired = lock.acquire(timeout=timeout)
+        else:
+            acquired = False
+            deadline = wait_start + timeout
+            while not cancel_event.is_set():
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    break
+                if lock.acquire(timeout=min(0.005, remaining)):
+                    acquired = True
+                    break
+        cancelled = not acquired and cancel_event is not None and cancel_event.is_set()
+        wait_elapsed = time.perf_counter() - wait_start
         observed_wait_ms = int(wait_elapsed * 1000)
 
         # Step 3: Update state
@@ -108,15 +123,26 @@ class LockManager:
                 return True
             else:
                 current_owner = self._owners.get(resource_id)
-                self.logger.log_event(
-                    thread=thread_id,
-                    action="timeout",
-                    resource=resource_id,
-                    owner=current_owner,
-                    wait_ms=observed_wait_ms,
-                    title=f"{thread_id} timed out on lock {resource_id}",
-                    detail=f"Timed out after {observed_wait_ms} ms waiting for {resource_id}.",
-                )
+                if cancelled:
+                    self.logger.log_event(
+                        thread=thread_id,
+                        action="aborted",
+                        resource=resource_id,
+                        owner=current_owner,
+                        wait_ms=observed_wait_ms,
+                        title=f"{thread_id} aborted while waiting for {resource_id}",
+                        detail=f"Wait for {resource_id} cancelled after {observed_wait_ms} ms to break a deadlock.",
+                    )
+                else:
+                    self.logger.log_event(
+                        thread=thread_id,
+                        action="timeout",
+                        resource=resource_id,
+                        owner=current_owner,
+                        wait_ms=observed_wait_ms,
+                        title=f"{thread_id} timed out on lock {resource_id}",
+                        detail=f"Timed out after {observed_wait_ms} ms waiting for {resource_id}.",
+                    )
                 return False
 
     def release(self, thread_id: str, resource_id: str) -> bool:
@@ -144,15 +170,24 @@ class LockManager:
             )
         return True
 
-    def detect_deadlock_cycle(self) -> Optional[List[str]]:
+    def snapshot_state(self) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Return ownership and waits captured together under one lock."""
+        with self._meta_lock:
+            return dict(self._owners), dict(self._waiters)
+
+    def detect_deadlock_cycle(self, owners: Optional[Dict[str, str]] = None,
+                              waits: Optional[Dict[str, str]] = None) -> Optional[List[str]]:
         """Inspect Wait-For Graph and detect if a circular wait exists.
+
+        Args:
+            owners, waits: Optional state from snapshot_state(); the live state
+                is read when omitted.
 
         Returns:
             List of thread IDs forming the cycle (e.g. ['T1', 'T2', 'T1']) or None.
         """
-        with self._meta_lock:
-            owners = dict(self._owners)
-            waits = dict(self._waiters)
+        if owners is None or waits is None:
+            owners, waits = self.snapshot_state()
 
         # Build Wait-For Graph: waiter -> owner
         # An edge exists from T_wait to T_owner if T_wait is waiting for a resource held by T_owner

@@ -31,6 +31,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def revalidate_frontend_files(request, call_next):
+    """Make browsers revalidate dashboard files so updates show without a hard refresh."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/api/health", summary="Health check endpoint")
 def health_check() -> Dict[str, str]:
     return {

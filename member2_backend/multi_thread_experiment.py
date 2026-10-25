@@ -1,13 +1,35 @@
-"""Configurable multi-thread deadlock simulation using two shared mutexes."""
+"""Configurable N-thread deadlock experiment on a ring of N shared mutexes.
+
+Every worker Ti needs two neighbouring locks, R_i and R_(i+1), with the last
+worker wrapping around to R1 (the dining-philosophers arrangement).
+
+* Vulnerable mode: each worker takes R_i first, all workers rendezvous while
+  holding it, and then each requests R_(i+1). Every thread is now waiting for
+  the next one, so the wait-for graph is a single cycle through all N threads.
+  The supervisor detects the cycle and recovers by aborting one victim thread.
+* Protected mode: every worker acquires its two locks in global index order
+  (resource hierarchy). The last worker therefore takes R1 before RN, which
+  breaks the circular-wait condition and lets all N workers complete.
+"""
 
 import threading
 import time
 import uuid
 from typing import Dict, List, Optional
 
+from .config import MULTI_THREAD_HOLD_SECONDS, MULTI_THREAD_MAX, MULTI_THREAD_MIN
 from .event_logger import EventLogger
 from .lock_manager import LockManager
-from .schemas import ExperimentMetrics, ExperimentResult
+from .schemas import ExperimentMetrics, ExperimentResult, WaitForSnapshot, WorkerReport
+
+
+def ring_lock_order(index: int, thread_count: int, mode: str) -> List[str]:
+    """Return the locks worker T<index> acquires, in acquisition order."""
+    first = index
+    second = index % thread_count + 1
+    if mode == "protected":
+        first, second = min(first, second), max(first, second)
+    return [f"R{first}", f"R{second}"]
 
 
 def run_multi_thread_experiment(
@@ -16,47 +38,52 @@ def run_multi_thread_experiment(
     timeout_seconds: float = 5.0,
     trial_id: Optional[str] = None,
 ) -> ExperimentResult:
-    """Run 3–12 real worker threads against shared locks A and B.
-
-    Vulnerable mode synchronizes T1 and T2 after taking opposite first locks,
-    guaranteeing a real two-node cycle; other workers contend on the same locks.
-    Protected mode has every worker acquire both locks in A → B order.
-    """
+    """Run thread_count real worker threads against a ring of thread_count locks."""
     if mode not in ("vulnerable", "protected"):
         raise ValueError("Mode must be 'vulnerable' or 'protected'.")
-    if not 3 <= thread_count <= 12:
-        raise ValueError("Thread count must be between 3 and 12.")
+    if not MULTI_THREAD_MIN <= thread_count <= MULTI_THREAD_MAX:
+        raise ValueError(
+            f"Thread count must be between {MULTI_THREAD_MIN} and {MULTI_THREAD_MAX}."
+        )
 
     trial_id = trial_id or "multi-" + uuid.uuid4().hex[:12]
     thread_ids = [f"T{index}" for index in range(1, thread_count + 1)]
+    resources = [f"R{index}" for index in range(1, thread_count + 1)]
+    lock_orders = {
+        thread_id: ring_lock_order(index, thread_count, mode)
+        for index, thread_id in enumerate(thread_ids, start=1)
+    }
     logger = EventLogger(trial_id=trial_id, mode=mode)
-    lock_mgr = LockManager(logger=logger, resources=["A", "B"])
-    lock_timeout = 0.8
-    statuses: Dict[str, Dict[str, object]] = {
-        thread_id: {"completed": False, "timed_out": False, "error": None}
+    lock_mgr = LockManager(logger=logger, resources=resources, order=resources)
+    cancel_events = {thread_id: threading.Event() for thread_id in thread_ids}
+    reports: Dict[str, Dict[str, object]] = {
+        thread_id: {"native_id": None, "outcome": "error", "finished_ms": None, "error": None}
         for thread_id in thread_ids
     }
-    worker_threads: List[threading.Thread] = []
-    cycle: Optional[List[str]] = None
-    start_mono = time.monotonic()
+    # All workers start together; in vulnerable mode they also meet again while
+    # each holds its first lock, which guarantees the full circular wait.
+    start_barrier = threading.Barrier(thread_count)
+    hold_barrier = threading.Barrier(thread_count)
+    barrier_timeout = max(1.0, timeout_seconds / 2)
+    start_clock = time.perf_counter()
 
     logger.log_event(
         thread="system",
         action="start",
-        title=f"{thread_count}-thread {mode} simulation started",
-        detail=f"{thread_count} real worker threads share locks A and B.",
+        title=f"{thread_count}-thread {mode} ring started",
+        detail=f"{thread_count} real worker threads share a ring of {thread_count} locks.",
     )
 
-    def execute_worker(
-        thread_id: str,
-        requested_locks: List[str],
-        rendezvous: Optional[threading.Barrier] = None,
-        worker_lock_timeout: float = lock_timeout,
-    ) -> None:
+    def elapsed_ms() -> int:
+        return int((time.perf_counter() - start_clock) * 1000)
+
+    def execute_worker(thread_id: str) -> None:
+        report = reports[thread_id]
+        report["native_id"] = threading.get_native_id()
         acquired: List[str] = []
-        status = statuses[thread_id]
         try:
-            for resource in requested_locks:
+            start_barrier.wait(timeout=barrier_timeout)
+            for position, resource in enumerate(lock_orders[thread_id]):
                 logger.log_event(
                     thread=thread_id,
                     action="requested",
@@ -65,101 +92,103 @@ def run_multi_thread_experiment(
                     title=f"{thread_id} requests lock {resource}",
                     detail=f"{thread_id} requests {resource} in {mode} mode.",
                 )
-                if not lock_mgr.acquire(thread_id, resource, timeout=worker_lock_timeout):
-                    status["timed_out"] = True
+                if not lock_mgr.acquire(thread_id, resource, timeout=timeout_seconds,
+                                        cancel_event=cancel_events[thread_id]):
+                    report["outcome"] = "aborted" if cancel_events[thread_id].is_set() else "timed_out"
                     return
                 acquired.append(resource)
-                if rendezvous is not None and len(acquired) == 1:
-                    rendezvous.wait(timeout=lock_timeout)
-            time.sleep(0.02)
-            status["completed"] = True
+                if mode == "vulnerable" and position == 0:
+                    hold_barrier.wait(timeout=barrier_timeout)
+            time.sleep(MULTI_THREAD_HOLD_SECONDS)
+            report["outcome"] = "completed"
         except threading.BrokenBarrierError:
-            status["error"] = "The vulnerable lock rendezvous did not complete."
+            report["error"] = "Worker rendezvous did not complete in time."
         except Exception as exc:
-            status["error"] = str(exc)
+            report["error"] = str(exc)
         finally:
             for resource in reversed(acquired):
                 lock_mgr.release(thread_id, resource)
+            report["finished_ms"] = elapsed_ms()
 
-    def start_worker(
-        thread_id: str,
-        requested_locks: List[str],
-        rendezvous: Optional[threading.Barrier] = None,
-        worker_lock_timeout: float = lock_timeout,
-    ) -> None:
-        worker = threading.Thread(
-            target=execute_worker,
-            args=(thread_id, requested_locks, rendezvous, worker_lock_timeout),
-            name=f"Multi-{thread_id}",
-        )
-        worker_threads.append(worker)
+    workers = [
+        threading.Thread(target=execute_worker, args=(thread_id,), name=f"Ring-{thread_id}", daemon=True)
+        for thread_id in thread_ids
+    ]
+    for worker in workers:
         worker.start()
 
-    if mode == "vulnerable":
-        rendezvous = threading.Barrier(2)
-        start_worker("T1", ["A", "B"], rendezvous)
-        start_worker("T2", ["B", "A"], rendezvous)
-        detection_deadline = start_mono + timeout_seconds
-        while time.monotonic() < detection_deadline:
-            cycle = lock_mgr.detect_deadlock_cycle()
+    # Supervisor loop: watch the live wait-for graph until every worker exits.
+    cycle: Optional[List[str]] = None
+    victim: Optional[str] = None
+    deadlock_snapshot: Optional[WaitForSnapshot] = None
+    peak_snapshot: Optional[WaitForSnapshot] = None
+    deadline = start_clock + timeout_seconds + 1.0
+    while any(worker.is_alive() for worker in workers) and time.perf_counter() < deadline:
+        owners, waits = lock_mgr.snapshot_state()
+        if peak_snapshot is None or len(waits) > len(peak_snapshot.waits):
+            peak_snapshot = WaitForSnapshot(label="peak_contention", time_ms=round((time.perf_counter() - start_clock) * 1000, 2),
+                                            owners=owners, waits=waits)
+        if mode == "vulnerable" and cycle is None:
+            cycle = lock_mgr.detect_deadlock_cycle(owners, waits)
             if cycle:
-                break
-            if any(statuses[thread_id]["error"] for thread_id in ("T1", "T2")):
-                break
-            time.sleep(0.002)
+                deadlock_snapshot = WaitForSnapshot(label="deadlock", time_ms=round((time.perf_counter() - start_clock) * 1000, 2),
+                                                    owners=owners, waits=waits)
+                logger.log_event(
+                    thread="system",
+                    action="deadlock_detected",
+                    title="Deadlock detected",
+                    detail=f"Circular wait through {len(cycle) - 1} threads: " + " → ".join(cycle) + ".",
+                )
+                # Recovery: preempt the highest-numbered (youngest) thread in the cycle.
+                victim = max(cycle, key=lambda thread_id: int(thread_id[1:]))
+                logger.log_event(
+                    thread="system",
+                    action="recovery",
+                    title=f"Recovery: abort {victim}",
+                    detail=f"{victim} is aborted and releases {lock_orders[victim][0]} so the other threads can finish.",
+                )
+                cancel_events[victim].set()
+        time.sleep(0.001)
 
-        # Start remaining contending workers against the held locks
-        for index, thread_id in enumerate(thread_ids[2:], start=3):
-            requested = ["A"] if index % 2 else ["B"]
-            start_worker(thread_id, requested, worker_lock_timeout=lock_timeout * 3)
+    for worker in workers:
+        worker.join(timeout=0.5)
+    still_running = any(worker.is_alive() for worker in workers)
 
-        # Give contending workers a moment to contend and register wait states
-        time.sleep(0.015)
-
-        # Re-verify and log deadlock cycle with full multi-thread dependency context
-        cycle = lock_mgr.detect_deadlock_cycle() or cycle
-        if cycle:
-            logger.log_event(
-                thread="system",
-                action="deadlock_detected",
-                title="Deadlock detected",
-                detail="Circular wait confirmed: " + " → ".join(cycle) + ".",
-            )
-    else:
-        for thread_id in thread_ids:
-            start_worker(thread_id, ["A", "B"])
-
-    join_deadline = time.monotonic() + max(timeout_seconds, lock_timeout * 2 + 1.0)
-    for worker in worker_threads:
-        worker.join(timeout=max(0.0, join_deadline - time.monotonic()))
-
-    still_running = any(worker.is_alive() for worker in worker_threads)
-    completed_count = sum(bool(status["completed"]) for status in statuses.values())
-    timed_out_count = sum(bool(status["timed_out"]) for status in statuses.values())
-    metrics_raw = logger.get_metrics_summary()
+    completed_count = sum(report["outcome"] == "completed" for report in reports.values())
+    timed_out_count = sum(report["outcome"] == "timed_out" for report in reports.values())
     if mode == "protected" and completed_count == thread_count and not still_running:
         logger.log_event(
             thread="system",
             action="complete",
             title="All worker threads completed",
-            detail=f"All {thread_count} workers completed without a circular wait.",
+            detail=f"All {thread_count} workers completed; global lock order prevented a circular wait.",
         )
 
-    status = "deadlock" if cycle else (
-        "completed" if mode == "protected" and completed_count == thread_count and not still_running
-        else "timeout" if still_running or timed_out_count
-        else "error"
-    )
-    errors = [str(item["error"]) for item in statuses.values() if item["error"]]
+    events = logger.get_events()
+    waited_ms = {thread_id: 0 for thread_id in thread_ids}
+    for event in events:
+        if event.thread in waited_ms and event.action in ("acquired", "timeout", "aborted"):
+            waited_ms[event.thread] += event.wait_ms
+
+    if cycle:
+        status = "deadlock"
+    elif mode == "protected" and completed_count == thread_count and not still_running:
+        status = "completed"
+    elif still_running or timed_out_count:
+        status = "timeout"
+    else:
+        status = "error"
+    errors = sorted({str(report["error"]) for report in reports.values() if report["error"]})
+    metrics_raw = logger.get_metrics_summary()
     return ExperimentResult(
         trial_id=trial_id,
         mode=mode,
         status=status,
         deadlock_detected=cycle is not None,
-        completion_time_ms=int((time.monotonic() - start_mono) * 1000),
-        events=logger.get_events(),
+        completion_time_ms=elapsed_ms(),
+        events=events,
         metrics=ExperimentMetrics(
-            threads_started=len(worker_threads),
+            threads_started=len(workers),
             threads_completed=completed_count,
             threads_timed_out=timed_out_count,
             peak_wait_ms=metrics_raw["peak_wait_ms"],
@@ -172,4 +201,18 @@ def run_multi_thread_experiment(
             "One or more workers did not finish before the bounded deadline."
             if status in ("timeout", "error") else None
         ),
+        resources=resources,
+        workers=[
+            WorkerReport(
+                thread=thread_id,
+                native_id=reports[thread_id]["native_id"],
+                lock_order=lock_orders[thread_id],
+                outcome=str(reports[thread_id]["outcome"]),
+                waited_ms=waited_ms[thread_id],
+                finished_ms=reports[thread_id]["finished_ms"],
+            )
+            for thread_id in thread_ids
+        ],
+        snapshot=deadlock_snapshot or peak_snapshot,
+        victim=victim,
     )

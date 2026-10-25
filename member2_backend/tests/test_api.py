@@ -63,7 +63,9 @@ def test_api_multi_thread_experiment_endpoint():
     vulnerable_data = vulnerable.json()
     assert vulnerable_data["status"] == "deadlock"
     assert vulnerable_data["metrics"]["threads_started"] == 5
-    assert vulnerable_data["metrics"]["deadlock_cycle"] == ["T1", "T2", "T1"]
+    assert vulnerable_data["metrics"]["deadlock_cycle"] == ["T1", "T2", "T3", "T4", "T5", "T1"]
+    assert vulnerable_data["victim"] == "T5"
+    assert len(vulnerable_data["workers"]) == 5
 
     protected = client.post(
         "/api/experiments/multi-thread",
@@ -75,12 +77,19 @@ def test_api_multi_thread_experiment_endpoint():
     assert protected_data["metrics"]["threads_completed"] == 5
 
 
+def test_dashboard_files_are_revalidated():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+
+
 def test_api_multi_thread_count_validation():
-    response = client.post(
-        "/api/experiments/multi-thread",
-        json={"mode": "protected", "thread_count": 13},
-    )
-    assert response.status_code == 422
+    for thread_count in (1, 33):
+        response = client.post(
+            "/api/experiments/multi-thread",
+            json={"mode": "protected", "thread_count": thread_count},
+        )
+        assert response.status_code == 422
 
 
 def test_api_trial_v1_endpoints():

@@ -23,7 +23,7 @@ class EventLogger:
         self.trial_id: str = trial_id
         self.mode: str = mode
         self._lock = threading.Lock()
-        self._start_time: float = time.monotonic()
+        self._start_time: float = time.perf_counter()
         self._events: List[Event] = []
         self._snapshots: List[Dict[str, Any]] = []
 
@@ -38,7 +38,7 @@ class EventLogger:
     def reset_timer(self) -> None:
         """Reset start timestamp to align exactly with experiment thread launch."""
         with self._lock:
-            self._start_time = time.monotonic()
+            self._start_time = time.perf_counter()
 
     def log_event(
         self,
@@ -65,7 +65,7 @@ class EventLogger:
             The recorded Event object.
         """
         with self._lock:
-            elapsed_sec = max(0.0, time.monotonic() - self._start_time)
+            elapsed_sec = max(0.0, time.perf_counter() - self._start_time)
             rounded_sec = round(elapsed_sec, 4)
             wait_int = max(0, int(wait_ms))
 
@@ -82,7 +82,7 @@ class EventLogger:
             elif action in ("waiting", "wait") and resource:
                 self._waits[thread] = resource
                 self._contention_count += 1
-            elif action in ("timeout",) and thread in self._waits:
+            elif action in ("timeout", "aborted") and thread in self._waits:
                 del self._waits[thread]
 
             if wait_int > self._peak_wait_ms:

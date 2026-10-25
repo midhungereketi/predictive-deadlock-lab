@@ -10,12 +10,12 @@ Open `index.html` in a browser, or serve this `frontend/` directory with any sta
 
 - Step, play, pause, reset, and switch between vulnerable and protected scenarios.
 - Live Wait-For Graph, timeline, risk trend, contention heatmap, and metrics.
-- Configurable 3–12 real-worker backend experiments with a multi-node Wait-For Graph and per-worker states.
+- Configurable 2–32 real-thread backend experiments (slider or number box) with an N-node Wait-For Graph, per-thread results with OS thread ids, and a lock timeline.
 - Import validated trial JSON, replay its events, and restore the built-in demo.
 - Side-by-side outcome comparison and CSV export derived from current trial data.
 - Responsive desktop and mobile layouts.
 
-The built-in scenarios are deterministic **demo data generated in the browser**. The frontend can import trial JSON or call FastAPI using **Run live backend trial** or the configurable **Run multi-thread trial**. The browser itself does not run OS threads. The separately hosted static preview has no Python backend.
+The built-in scenarios are deterministic **demo data generated in the browser**. The frontend can import trial JSON or call FastAPI using **Run live backend trial** or the configurable **Run N threads** button. The browser itself does not run OS threads. The separately hosted static preview has no Python backend.
 
 ## Backend handoff
 
@@ -45,7 +45,7 @@ The backend runs bounded real-thread trials and returns versioned JSON through `
 
 The shortened snippet shows one event; a valid file needs a terminal event and consistent states. The backend returns this format through the local or hosted API; users can also import saved JSON. The UI derives graph edges and comparison metrics from recorded snapshots.
 
-The larger simulation uses `POST /api/experiments/multi-thread` with JSON such as `{"mode":"vulnerable","thread_count":6,"timeout_seconds":5}`. This endpoint accepts 3–12 workers and returns the raw experiment response; its visualizer is separate from the two-thread trial-v1 importer. Both modes use shared locks A and B. Vulnerable mode demonstrates a cycle among two synchronized workers while other workers contend; protected mode serializes acquisitions with a global A → B lock order.
+The larger simulation uses `POST /api/experiments/multi-thread` with JSON such as `{"mode":"vulnerable","thread_count":6,"timeout_seconds":5}`. It accepts 2–32 threads and returns the raw experiment response plus `workers` (per-thread OS id, lock order, wait time, outcome), `snapshot` (wait-for state at detection or peak contention) and `victim`. Its visualizer is separate from the two-thread trial-v1 importer. The run uses a ring of N locks: vulnerable mode forms one cycle through all N threads and recovers by aborting a victim; protected mode uses global lock order so every thread completes.
 
 Run the contract checks with:
 

@@ -14,6 +14,11 @@ PROTECTED_LOCK_TIMEOUT_SECONDS: float = 2.0
 THREAD_CRITICAL_SECTION_DELAY_SECONDS: float = 0.05
 INTERLEAVING_DELAY_SECONDS: float = 0.02
 
+# Configurable N-thread resource-ring experiment
+MULTI_THREAD_MIN: int = 2
+MULTI_THREAD_MAX: int = 32
+MULTI_THREAD_HOLD_SECONDS: float = 0.03
+
 # Lock ordering definition
 COMMON_LOCK_ORDER: List[str] = ["A", "B"]
 DEFAULT_RESOURCES: List[str] = ["A", "B"]

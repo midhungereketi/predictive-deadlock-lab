@@ -139,6 +139,7 @@ function setMode(next) {
     button.setAttribute("aria-pressed", String(selected));
   });
   render();
+  updateMultiThreadLabel();
 }
 
 function advance() {
@@ -502,6 +503,7 @@ function loadTrial(data, source = "imported") {
     button.setAttribute("aria-pressed", String(selected));
   });
   render();
+  updateMultiThreadLabel();
   showView("lab");
   showImportFeedback("Loaded " + imported.runId + ". Run or step through " + imported.frames.length + " recorded states.", true);
   return imported;
@@ -589,210 +591,239 @@ if (liveRunBtn) {
 }
 
 let isRunningMultiThread = false;
-function renderMultiThreadResult(result) {
-  const panel = document.getElementById("multi-thread-results");
-  const badge = document.getElementById("multi-thread-status");
+const MULTI_THREAD_MIN = 2;
+const MULTI_THREAD_MAX = 32;
+const multiCountInput = document.getElementById("multi-thread-count");
+const multiRangeInput = document.getElementById("multi-thread-range");
+const multiRunButton = document.getElementById("multi-thread-run-button");
+
+function readThreadCount() {
+  const value = Math.round(Number(multiCountInput.value));
+  return Number.isFinite(value) ? Math.min(MULTI_THREAD_MAX, Math.max(MULTI_THREAD_MIN, value)) : 6;
+}
+
+function updateMultiThreadLabel() {
+  if (!isRunningMultiThread) multiRunButton.textContent = "⚡ Run " + readThreadCount() + " threads · " + mode;
+}
+
+multiRangeInput.addEventListener("input", () => { multiCountInput.value = multiRangeInput.value; updateMultiThreadLabel(); });
+multiCountInput.addEventListener("input", () => {
+  if (multiCountInput.value !== "") multiRangeInput.value = readThreadCount();
+  updateMultiThreadLabel();
+});
+multiCountInput.addEventListener("change", () => {
+  multiCountInput.value = readThreadCount();
+  multiRangeInput.value = multiCountInput.value;
+  updateMultiThreadLabel();
+});
+
+function threadNumber(threadId) { return Number(String(threadId).slice(1)); }
+
+function renderMultiThreadGraph(result, cycleNodes) {
   const graph = document.getElementById("multi-thread-graph");
-  const workerList = document.getElementById("multi-thread-worker-list");
-  const metrics = result.metrics;
-  const threadIds = Array.from({ length: metrics.threads_started }, (_, index) => "T" + (index + 1));
-  const owners = {};
-  const waits = {};
-  let deadlockSnapshot = null;
-  let peakSnapshot = null;
-  let peakWaitCount = -1;
-  let finalSnapshot = null;
-  let completedAtOutcome = new Set();
-
-  for (const event of result.events) {
-    if (event.action === "acquired" && event.resource) {
-      owners[event.resource] = event.thread;
-      delete waits[event.thread];
-    } else if (event.action === "released" && event.resource && owners[event.resource] === event.thread) {
-      delete owners[event.resource];
-    } else if (event.action === "waiting" && event.resource) {
-      waits[event.thread] = event.resource;
-    } else if (event.action === "timeout") {
-      delete waits[event.thread];
-    }
-
-    const currentWaitCount = Object.keys(waits).length;
-    if (currentWaitCount > peakWaitCount) {
-      peakWaitCount = currentWaitCount;
-      peakSnapshot = { owners: { ...owners }, waits: { ...waits }, action: "peak_contention" };
-    }
-
-    if (event.action === "deadlock_detected") {
-      deadlockSnapshot = { owners: { ...owners }, waits: { ...waits }, action: event.action };
-    } else if (event.action === "complete") {
-      finalSnapshot = { owners: { ...owners }, waits: { ...waits }, action: event.action };
-    }
-  }
-
-  // Choose the observed snapshot that best demonstrates the multi-thread dependencies:
-  let observed = null;
-  if (result.status === "deadlock") {
-    // If peakSnapshot captures contending waiters alongside the cycle, use peakSnapshot
-    if (deadlockSnapshot && Object.keys(deadlockSnapshot.waits).length >= (peakSnapshot ? Object.keys(peakSnapshot.waits).length : 0)) {
-      observed = deadlockSnapshot;
-    } else {
-      observed = peakSnapshot || deadlockSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "snapshot" };
-    }
-  } else if (result.status === "completed") {
-    completedAtOutcome = new Set(threadIds);
-    // For protected mode, show the peak contention dependency graph if workers queued during the run
-    observed = (peakSnapshot && Object.keys(peakSnapshot.waits).length > 0)
-      ? peakSnapshot
-      : (finalSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "complete" });
-  } else {
-    observed = peakSnapshot || deadlockSnapshot || { owners: { ...owners }, waits: { ...waits }, action: "snapshot" };
-  }
-
-  const cycleNodes = new Set(metrics.deadlock_cycle || []);
-
-  const centerX = 360, centerY = 210, radiusX = 275, radiusY = 150;
-  const nodeRadius = threadIds.length > 8 ? 24 : 28;
+  const workers = result.workers || [];
+  const snapshot = result.snapshot || { owners: {}, waits: {}, label: "none" };
+  const count = workers.length;
+  // Size the drawing to its rendered width so node and edge labels stay legible on narrow screens.
+  const viewWidth = Math.max(320, Math.min(720, Math.round(graph.getBoundingClientRect().width) || 720));
+  const viewHeight = viewWidth >= 600 ? 420 : Math.round(viewWidth * 0.95);
+  const narrow = viewWidth < 600;
+  // Per-node "holds/wants" labels only fit when there is room; the table repeats them.
+  const dense = count > 12 || (narrow && count > 5);
+  const centerX = viewWidth / 2, centerY = viewHeight / 2;
+  const nodeRadius = Math.round((count <= 8 ? 26 : count <= 16 ? 18 : 12) * (narrow ? 0.7 : 1));
+  const radiusX = (count <= 2 ? 0.6 : 1) * (centerX - nodeRadius - 46);
+  const radiusY = centerY - nodeRadius - 26;
   const positions = {};
-  threadIds.forEach((threadId, index) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2 / threadIds.length);
-    positions[threadId] = {
-      x: centerX + Math.cos(angle) * radiusX,
-      y: centerY + Math.sin(angle) * radiusY
-    };
+  workers.forEach((worker, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / count;
+    positions[worker.thread] = { x: centerX + Math.cos(angle) * radiusX, y: centerY + Math.sin(angle) * radiusY };
   });
 
-  const edges = Object.entries(observed.waits).map(([waiter, resource]) => ({
-    waiter,
-    owner: observed.owners[resource],
-    resource
-  })).filter(edge => edge.owner && positions[edge.waiter] && positions[edge.owner]);
-
-  // Identify any mutual waiting pairs to guarantee cycle detection even if metadata is missing
-  edges.forEach(edge => {
-    if (edges.some(other => other.waiter === edge.owner && other.owner === edge.waiter)) {
-      cycleNodes.add(edge.waiter);
-      cycleNodes.add(edge.owner);
-    }
-  });
+  const edges = Object.entries(snapshot.waits)
+    .map(([waiter, resource]) => ({ waiter, resource, owner: snapshot.owners[resource] }))
+    .filter(edge => edge.owner && positions[edge.waiter] && positions[edge.owner]);
 
   const edgeMarkup = edges.map(edge => {
     const from = positions[edge.waiter], to = positions[edge.owner];
+    const mutual = edges.some(other => other.waiter === edge.owner && other.owner === edge.waiter);
+    const isCycle = cycleNodes.has(edge.waiter) && cycleNodes.has(edge.owner);
     const dx = to.x - from.x, dy = to.y - from.y;
     const length = Math.hypot(dx, dy) || 1;
-    const unitX = dx / length, unitY = dy / length;
-    const nx = -unitY, ny = unitX; // Normal vector pointing perpendicular (rightward)
-
-    const isMutual = edges.some(other => other.waiter === edge.owner && other.owner === edge.waiter);
-    const isCycle = cycleNodes.has(edge.waiter) && cycleNodes.has(edge.owner);
-
-    // Mutual cycle edges curve distinctly in opposite directions; unidirectional edges curve gently
-    const curveOffset = isMutual ? 42 : 14;
-    const ctrlX = (from.x + to.x) / 2 + nx * curveOffset;
-    const ctrlY = (from.y + to.y) / 2 + ny * curveOffset;
-
-    const cdx1 = ctrlX - from.x, cdy1 = ctrlY - from.y;
-    const clen1 = Math.hypot(cdx1, cdy1) || 1;
-    const startX = from.x + (cdx1 / clen1) * (nodeRadius + 2);
-    const startY = from.y + (cdy1 / clen1) * (nodeRadius + 2);
-
-    const cdx2 = to.x - ctrlX, cdy2 = to.y - ctrlY;
-    const clen2 = Math.hypot(cdx2, cdy2) || 1;
-    const endX = to.x - (cdx2 / clen2) * (nodeRadius + 9);
-    const endY = to.y - (cdy2 / clen2) * (nodeRadius + 9);
-
-    const pathData = 'M ' + startX.toFixed(1) + ' ' + startY.toFixed(1) + ' Q ' + ctrlX.toFixed(1) + ' ' + ctrlY.toFixed(1) + ' ' + endX.toFixed(1) + ' ' + endY.toFixed(1);
-
-    // Label coordinates at midpoint of quadratic curve
-    const midX = 0.25 * startX + 0.5 * ctrlX + 0.25 * endX;
-    const midY = 0.25 * startY + 0.5 * ctrlY + 0.25 * endY;
-    const labelX = midX + nx * (isMutual ? 10 : 6);
-    const labelY = midY + ny * (isMutual ? 10 : 6) + 4;
-
-    const markerId = isCycle ? "multi-arrow-danger" : "multi-arrow";
-    const edgeClass = "multi-graph-edge" + (isCycle ? " is-cycle" : "");
-    const labelClass = "multi-graph-edge-label" + (isCycle ? " is-cycle" : "");
-
-    return '<path class="' + edgeClass + '" d="' + pathData + '" marker-end="url(#' + markerId + ')"/>' +
-      '<text class="' + labelClass + '" x="' + labelX.toFixed(1) + '" y="' + labelY.toFixed(1) + '">waits ' + escapeHtml(edge.resource) + '</text>';
+    // Bend edges outward from the ring centre so neighbouring arrows stay readable.
+    const midX = (from.x + to.x) / 2, midY = (from.y + to.y) / 2;
+    const outX = midX - centerX, outY = midY - centerY;
+    const outLength = Math.hypot(outX, outY) || 1;
+    const bend = mutual ? 46 : Math.min(28, length * 0.18);
+    const ctrlX = midX + (mutual ? -dy / length : outX / outLength) * bend;
+    const ctrlY = midY + (mutual ? dx / length : outY / outLength) * bend;
+    const startLen = Math.hypot(ctrlX - from.x, ctrlY - from.y) || 1;
+    const endLen = Math.hypot(to.x - ctrlX, to.y - ctrlY) || 1;
+    const startX = from.x + (ctrlX - from.x) / startLen * (nodeRadius + 2);
+    const startY = from.y + (ctrlY - from.y) / startLen * (nodeRadius + 2);
+    const endX = to.x - (to.x - ctrlX) / endLen * (nodeRadius + 7);
+    const endY = to.y - (to.y - ctrlY) / endLen * (nodeRadius + 7);
+    const label = dense ? "" :
+      '<text class="multi-graph-edge-label' + (isCycle ? " is-cycle" : "") + '" x="' + ctrlX.toFixed(1) + '" y="' + (ctrlY + 4).toFixed(1) + '">' + escapeHtml(edge.resource) + '</text>';
+    return '<path class="multi-graph-edge' + (isCycle ? " is-cycle" : "") + '" d="M ' + startX.toFixed(1) + ' ' + startY.toFixed(1) +
+      ' Q ' + ctrlX.toFixed(1) + ' ' + ctrlY.toFixed(1) + ' ' + endX.toFixed(1) + ' ' + endY.toFixed(1) +
+      '" marker-end="url(#' + (isCycle ? "multi-arrow-danger" : "multi-arrow") + ')"/>' + label;
   }).join("");
 
-  const nodeMarkup = threadIds.map(threadId => {
-    const position = positions[threadId];
-    const held = Object.entries(observed.owners).filter(([, owner]) => owner === threadId).map(([resource]) => resource);
-    const isCycle = cycleNodes.has(threadId);
-    const isWaiting = Boolean(observed.waits[threadId]);
-    const state = observed.waits[threadId]
-      ? "WAITS " + observed.waits[threadId] + (held.length ? " · HOLDS " + held.join("+") : "")
-      : completedAtOutcome.has(threadId) && !held.length ? "COMPLETE"
-      : held.length ? "HOLDS " + held.join("+") : "READY";
-    const className = (isCycle ? " is-cycle" : "") + (isWaiting ? " is-waiting" : held.length ? " is-holding" : "");
+  const nodeMarkup = workers.map(worker => {
+    const position = positions[worker.thread];
+    const held = Object.entries(snapshot.owners).filter(([, owner]) => owner === worker.thread).map(([resource]) => resource);
+    const waiting = snapshot.waits[worker.thread];
+    const isVictim = worker.thread === result.victim;
+    const className = (cycleNodes.has(worker.thread) ? " is-cycle" : waiting ? " is-waiting" : held.length ? " is-holding" : "") + (isVictim ? " is-victim" : "");
+    const state = dense ? "" :
+      '<text class="multi-graph-state" y="' + (nodeRadius + 15) + '">' + escapeHtml((held.length ? "holds " + held.join("+") : "") + (waiting ? (held.length ? " · " : "") + "wants " + waiting : "")) + '</text>';
     return '<g class="multi-graph-node' + className + '" transform="translate(' + position.x.toFixed(1) + ' ' + position.y.toFixed(1) + ')">' +
-      '<circle r="' + nodeRadius + '"/>' +
-      '<text class="multi-graph-id" y="-2">' + threadId + '</text>' +
-      '<text class="multi-graph-state" y="' + (nodeRadius + 17) + '">' + escapeHtml(state) + '</text></g>';
+      '<title>' + escapeHtml(worker.thread + " (OS thread " + worker.native_id + "): " + worker.outcome) + '</title>' +
+      '<circle r="' + nodeRadius + '"/><text class="multi-graph-id" y="' + (count > 16 ? 3 : 4) + '">' + worker.thread + '</text>' + state + '</g>';
   }).join("");
 
   graph.innerHTML = '<defs>' +
     '<marker id="multi-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L8,3.5 z" fill="#ffb547"/></marker>' +
     '<marker id="multi-arrow-danger" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L8,3.5 z" fill="#ff4d6d"/></marker>' +
-    '</defs>' +
-    '<ellipse class="multi-graph-orbit" cx="' + centerX + '" cy="' + centerY + '" rx="' + radiusX + '" ry="' + radiusY + '"/>' +
-    edgeMarkup + nodeMarkup;
-  graph.setAttribute("aria-label", threadIds.length + " worker nodes and " + edges.length + " wait-for edges");
+    '</defs>' + edgeMarkup + nodeMarkup;
+  graph.setAttribute("viewBox", "0 0 " + viewWidth + " " + viewHeight);
+  graph.classList.toggle("is-dense", count > 16);
+  graph.setAttribute("aria-label", count + " worker threads and " + edges.length + " wait-for edges");
+  document.getElementById("multi-thread-graph-heading").textContent = snapshot.label === "deadlock"
+    ? "Wait-for graph at detection · " + edges.length + " threads waiting in a circle"
+    : "Wait-for graph at peak contention · " + edges.length + " of " + count + " threads queued";
+}
 
-  workerList.innerHTML = threadIds.map(threadId => {
-    const held = Object.entries(observed.owners).filter(([, owner]) => owner === threadId).map(([resource]) => resource);
-    const isCycle = cycleNodes.has(threadId);
-    const isWaiting = Boolean(observed.waits[threadId]);
-    const waiterTarget = observed.waits[threadId] ? observed.owners[observed.waits[threadId]] : null;
-    const state = isCycle
-      ? "Deadlocked in cycle · waits for " + observed.waits[threadId] + (waiterTarget ? " (held by " + waiterTarget + ")" : "") + (held.length ? " · holds " + held.join(", ") : "")
-      : isWaiting
-        ? "Waiting for " + observed.waits[threadId] + (waiterTarget ? " (held by " + waiterTarget + ")" : "") + (held.length ? " · holds " + held.join(", ") : "")
-        : completedAtOutcome.has(threadId) && !held.length ? "Completed safely"
-        : held.length ? "Holds " + held.join(", ") : "Ready / idle";
-    const className = isCycle ? "is-cycle" : isWaiting ? "is-waiting" : held.length ? "is-holding" : "";
-    return '<div class="multi-worker-row"><strong>' + threadId + '</strong><span class="' + className + '">' + escapeHtml(state) + '</span></div>';
+function renderMultiThreadTimeline(result) {
+  const svg = document.getElementById("multi-thread-timeline");
+  const workers = result.workers || [];
+  const total = Math.max(1, result.completion_time_ms);
+  const rowHeight = workers.length <= 12 ? 22 : workers.length <= 20 ? 15 : 11;
+  // Match the drawing width to the rendered width so labels stay legible on narrow screens.
+  const viewWidth = Math.max(340, Math.round(svg.getBoundingClientRect().width) || 720);
+  const left = 46, right = 14, top = 8, axis = 24;
+  const width = viewWidth - left - right;
+  const height = top + rowHeight * workers.length + axis;
+  const x = ms => left + Math.min(1, Math.max(0, ms / total)) * width;
+  const lanes = {};
+  workers.forEach(worker => { lanes[worker.thread] = { held: 0, holdStart: null, waitStart: null, segments: [] }; });
+  let deadlockMs = null, recoveryMs = null;
+
+  for (const event of result.events) {
+    const ms = event.time * 1000;
+    if (event.action === "deadlock_detected") deadlockMs = ms;
+    if (event.action === "recovery") recoveryMs = ms;
+    const lane = lanes[event.thread];
+    if (!lane) continue;
+    if (event.action === "waiting") lane.waitStart = ms;
+    if (["acquired", "timeout", "aborted"].includes(event.action) && lane.waitStart !== null) {
+      lane.segments.push({ kind: "wait", from: lane.waitStart, to: ms });
+      lane.waitStart = null;
+    }
+    if (event.action === "acquired") {
+      if (lane.held === 0) lane.holdStart = ms;
+      lane.held += 1;
+    } else if (event.action === "released" && lane.held > 0) {
+      lane.held -= 1;
+      if (lane.held === 0) lane.segments.push({ kind: "hold", from: lane.holdStart, to: ms });
+    }
+  }
+
+  const barHeight = Math.max(5, rowHeight - 7);
+  let markup = "";
+  workers.forEach((worker, index) => {
+    const y = top + index * rowHeight;
+    const lane = lanes[worker.thread];
+    const isVictim = worker.thread === result.victim;
+    markup += '<text class="timeline-label' + (isVictim ? " is-victim" : "") + '" x="' + (left - 8) + '" y="' + (y + rowHeight / 2 + 3.5) + '">' + worker.thread + '</text>';
+    markup += '<line class="timeline-track" x1="' + left + '" x2="' + (left + width) + '" y1="' + (y + rowHeight / 2) + '" y2="' + (y + rowHeight / 2) + '"/>';
+    // Threads keep their first lock while waiting for the second, so draw holds first and waits on top.
+    lane.segments.sort((a, b) => (a.kind === "hold" ? 0 : 1) - (b.kind === "hold" ? 0 : 1)).forEach(segment => {
+      const x1 = x(segment.from), x2 = Math.max(x(segment.to), x1 + 1.5);
+      markup += '<rect class="timeline-' + segment.kind + '" x="' + x1.toFixed(1) + '" y="' + (y + (rowHeight - barHeight) / 2).toFixed(1) +
+        '" width="' + (x2 - x1).toFixed(1) + '" height="' + barHeight + '" rx="2"/>';
+    });
+    if (worker.finished_ms !== null) {
+      markup += '<circle class="timeline-end' + (worker.outcome === "completed" ? "" : " is-failed") + '" cx="' + x(worker.finished_ms).toFixed(1) +
+        '" cy="' + (y + rowHeight / 2) + '" r="' + Math.min(4, barHeight / 2) + '"><title>' + escapeHtml(worker.thread + " " + worker.outcome + " at " + worker.finished_ms + " ms") + '</title></circle>';
+    }
+  });
+  const chartBottom = top + rowHeight * workers.length;
+  if (deadlockMs !== null) {
+    markup += '<line class="timeline-marker" x1="' + x(deadlockMs) + '" x2="' + x(deadlockMs) + '" y1="' + top + '" y2="' + chartBottom + '"/>' +
+      '<text class="timeline-marker-label" x="' + (x(deadlockMs) + 4) + '" y="' + (chartBottom + 18) + '">deadlock detected' + (recoveryMs !== null && result.victim ? " → abort " + result.victim : "") + '</text>';
+  }
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const tx = left + width * tick / 4;
+    markup += '<text class="timeline-tick" x="' + tx + '" y="' + (chartBottom + (deadlockMs !== null ? 8 : 16)) + '">' + Math.round(total * tick / 4) + ' ms</text>';
+  }
+  svg.setAttribute("viewBox", "0 0 " + viewWidth + " " + (height + 4));
+  svg.innerHTML = markup;
+}
+
+function renderMultiThreadResult(result) {
+  const panel = document.getElementById("multi-thread-results");
+  const badge = document.getElementById("multi-thread-status");
+  const metrics = result.metrics;
+  const workers = result.workers || [];
+  const cycle = metrics.deadlock_cycle || [];
+  const cycleNodes = new Set(cycle);
+  const count = workers.length;
+  const completedCount = workers.filter(worker => worker.outcome === "completed").length;
+  const abortedCount = workers.filter(worker => worker.outcome === "aborted").length;
+  const osIds = new Set(workers.map(worker => worker.native_id).filter(id => id !== null));
+  const peakQueued = result.snapshot ? Object.keys(result.snapshot.waits).length : 0;
+
+  panel.hidden = false;
+  renderMultiThreadGraph(result, cycleNodes);
+  renderMultiThreadTimeline(result);
+
+  const outcomeLabels = { completed: "Completed", aborted: "Aborted (victim)", timed_out: "Timed out", error: "Error" };
+  document.getElementById("multi-thread-worker-list").innerHTML = workers.map(worker => {
+    const inCycle = cycleNodes.has(worker.thread);
+    return '<tr class="' + (worker.outcome === "completed" ? "is-ok" : "is-failed") + '">' +
+      '<td><strong>' + worker.thread + '</strong>' + (inCycle ? ' <span class="cycle-tag">in cycle</span>' : '') + '</td>' +
+      '<td>' + (worker.native_id ?? "—") + '</td>' +
+      '<td>' + worker.lock_order.join(" → ") + '</td>' +
+      '<td>' + worker.waited_ms + ' ms</td>' +
+      '<td class="outcome">' + (outcomeLabels[worker.outcome] || escapeHtml(worker.outcome)) + '</td></tr>';
   }).join("");
 
-  const statusText = result.status === "deadlock" ? "CYCLE DETECTED" : result.status.toUpperCase();
-  badge.textContent = statusText;
+  badge.textContent = result.status === "deadlock" ? "DEADLOCK · " + (cycle.length - 1) + "-THREAD CYCLE" : result.status.toUpperCase();
   badge.className = "outline-badge" + (result.status === "deadlock" ? " is-danger" : result.status === "completed" ? " is-safe" : " is-warning");
 
-  const isProtectedShowingContention = result.status === "completed" && edges.length > 0;
-  document.getElementById("multi-thread-worker-heading").textContent = result.status === "deadlock"
-    ? "Worker state at deadlock cycle snapshot"
-    : isProtectedShowingContention
-      ? "Worker state during peak contention (all safely completed)"
-      : "Worker state at completion";
-
+  const ring = count > 4 ? "T1 → T2 → … → T" + count + " → T1" : cycle.join(" → ");
   document.getElementById("multi-thread-summary").textContent = result.status === "deadlock"
-    ? "A circular wait cycle (" + (metrics.deadlock_cycle || []).join(" ⇄ ") + ") formed! Remaining workers contended on the same locks and waited. Across the trial, " +
-      metrics.threads_completed + " completed and " + metrics.threads_timed_out + " timed out within bounded waits."
+    ? "Each of the " + count + " threads took its first lock and then waited for the next thread's lock, forming one circular wait through all " +
+      (cycle.length - 1) + " threads (" + ring + "). The supervisor detected the cycle " + Number(result.snapshot.time_ms).toFixed(1) + " ms after the threads started and aborted " +
+      result.victim + "; the other " + completedCount + " threads then finished."
     : result.status === "completed"
-      ? "All " + metrics.threads_completed + " workers completed safely with the canonical A → B lock order. As shown in the graph, threads queued without forming any circular wait."
+      ? "All " + completedCount + " of " + count + " threads finished. Each took its two locks in global order (lower number first), so up to " +
+        peakQueued + " threads queued at once but no circular wait could form."
       : result.error || "The run ended without a confirmed terminal outcome.";
 
-  document.getElementById("multi-thread-metric-workers").textContent = metrics.threads_started;
-  document.getElementById("multi-thread-metric-completed").textContent = metrics.threads_completed;
-  document.getElementById("multi-thread-metric-blocked").textContent = Object.keys(observed.waits).length;
-  document.getElementById("multi-thread-metric-contention").textContent = metrics.contention_count;
+  document.getElementById("multi-thread-metric-workers").textContent = metrics.threads_started + " / " + count;
+  document.getElementById("multi-thread-metric-os").textContent = osIds.size + " distinct";
+  document.getElementById("multi-thread-metric-cycle").textContent = cycle.length ? (cycle.length - 1) + " threads" : "none";
+  document.getElementById("multi-thread-metric-completed").textContent = completedCount;
+  document.getElementById("multi-thread-metric-aborted").textContent = abortedCount ? abortedCount + " (" + result.victim + ")" : "0";
   document.getElementById("multi-thread-metric-runtime").textContent = result.completion_time_ms + " ms";
-  panel.hidden = false;
-  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function runMultiThreadTrial() {
   if (isRunningMultiThread) return;
+  const threadCount = readThreadCount();
+  multiCountInput.value = threadCount;
+  multiRangeInput.value = threadCount;
   isRunningMultiThread = true;
-  const button = document.getElementById("multi-thread-run-button");
-  const threadCount = Number(document.getElementById("multi-thread-count").value);
-  button.disabled = true;
-  button.textContent = "⏳ Running " + threadCount + " workers...";
-  showImportFeedback("Starting " + threadCount + " real worker threads in " + mode + " mode against shared locks A and B...", true);
+  multiRunButton.disabled = true;
+  multiRunButton.textContent = "⏳ Running " + threadCount + " threads...";
+  showImportFeedback("Starting " + threadCount + " real OS threads in " + mode + " mode on a ring of " + threadCount + " locks...", true);
   try {
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
     const response = await fetch("/api/experiments/multi-thread", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -802,14 +833,17 @@ async function runMultiThreadTrial() {
     window.clearTimeout(timeoutId);
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.detail || "Backend returned status " + response.status);
+      const detail = Array.isArray(errorData?.detail) ? errorData.detail.map(item => item.msg).join("; ") : errorData?.detail;
+      throw new Error(detail || "Backend returned status " + response.status);
     }
     const result = await response.json();
     renderMultiThreadResult(result);
     showImportFeedback(
       result.status === "deadlock"
-        ? "Multi-thread trial complete: a wait-for cycle was detected with " + threadCount + " workers."
-        : "Multi-thread trial complete: " + result.metrics.threads_completed + " of " + threadCount + " workers finished.",
+        ? "Deadlock reproduced: all " + threadCount + " threads formed one cycle; " + result.victim + " was aborted to recover."
+        : result.status === "completed"
+          ? "Protected run: all " + threadCount + " threads finished with no cycle."
+          : "Run ended with status " + result.status + ".",
       result.status === "deadlock" || result.status === "completed"
     );
   } catch (error) {
@@ -817,12 +851,12 @@ async function runMultiThreadTrial() {
     showImportFeedback("Could not run the multi-thread simulation: " + message + ". Verify the FastAPI backend is running.", false);
   } finally {
     isRunningMultiThread = false;
-    button.disabled = false;
-    button.textContent = "⚡ Run multi-thread trial";
+    multiRunButton.disabled = false;
+    updateMultiThreadLabel();
   }
 }
 
-document.getElementById("multi-thread-run-button").addEventListener("click", runMultiThreadTrial);
+multiRunButton.addEventListener("click", runMultiThreadTrial);
 
 let isRunningBatch = false;
 async function runBatchComparison() {

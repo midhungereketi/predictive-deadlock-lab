@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css">
-  <script src="./trial-data.js" defer></script>
-  <script src="./motion.js" defer></script>
-  <script src="./app.js" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=ring-6">
+  <script src="./trial-data.js?v=ring-6" defer></script>
+  <script src="./motion.js?v=ring-6" defer></script>
+  <script src="./app.js?v=ring-6" defer></script>
 </head>
 <body data-state="calm">
   <!-- Ambient layers: particle field, mesh orbs, grain -->
@@ -57,7 +57,7 @@
           <div class="hero-copy">
             <div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Interactive experiment · 01</div>
             <h1 id="lab-title" class="split">Watch the wait <em>before</em> the cycle.</h1>
-            <p data-reveal>Explore two shared mutexes with 3–12 real worker threads. Compare a reproducible circular wait with a shared lock order that prevents one.</p>
+            <p data-reveal>Run 2–32 real worker threads on a ring of shared mutexes. Compare a circular wait through every thread with a global lock order that prevents one.</p>
             <div class="hero-cta" data-reveal>
               <button class="button button-primary magnetic" id="play-button" type="button"><span class="btn-label"><span id="play-icon" aria-hidden="true">▶</span> <span id="play-label">Run simulation</span></span><span class="btn-orb" aria-hidden="true">↗</span></button>
               <button class="icon-button magnetic" id="step-button" type="button" aria-label="Advance one step" title="Advance one step">↦</button>
@@ -87,14 +87,12 @@
             <span class="source-copy"><span class="source-led"></span><b id="data-source-label">Built-in demonstration</b><small id="data-source-detail">Scenario events are generated in this browser.</small></span>
             <div class="source-actions">
               <button id="live-run-button" class="chip-btn" type="button" title="Execute real OS threads on the backend">⚡ Run live backend trial</button>
-              <label class="thread-count-control" for="multi-thread-count">Worker threads
-                <select id="multi-thread-count" aria-label="Number of worker threads">
-                  <option value="3">3</option><option value="4">4</option><option value="5">5</option>
-                  <option value="6" selected>6</option><option value="7">7</option><option value="8">8</option>
-                  <option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-                </select>
-              </label>
-              <button id="multi-thread-run-button" class="chip-btn" type="button" title="Run a configurable multi-thread experiment">⚡ Run multi-thread trial</button>
+              <div class="thread-count-control" role="group" aria-label="Worker thread count">
+                <label for="multi-thread-count">Threads</label>
+                <input id="multi-thread-range" type="range" min="2" max="32" step="1" value="6" aria-label="Worker threads slider">
+                <input id="multi-thread-count" type="number" min="2" max="32" step="1" value="6" inputmode="numeric">
+              </div>
+              <button id="multi-thread-run-button" class="chip-btn" type="button" title="Run N real OS threads on a ring of N locks">⚡ Run 6 threads · vulnerable</button>
               <button id="import-button" class="chip-btn" type="button">↑ Import trial JSON</button>
               <button id="restore-button" class="chip-btn" type="button" hidden>Restore demo</button>
               <input id="trial-file" type="file" accept=".json,application/json" hidden>
@@ -111,21 +109,33 @@
             </div>
             <p id="multi-thread-summary" class="multi-thread-summary"></p>
             <div class="multi-thread-metrics" aria-label="Run metrics">
-              <div><span>WORKERS</span><strong id="multi-thread-metric-workers">—</strong></div>
+              <div><span>THREADS STARTED</span><strong id="multi-thread-metric-workers">—</strong></div>
+              <div><span>OS THREAD IDS</span><strong id="multi-thread-metric-os">—</strong></div>
+              <div><span>CYCLE LENGTH</span><strong id="multi-thread-metric-cycle">—</strong></div>
               <div><span>COMPLETED</span><strong id="multi-thread-metric-completed">—</strong></div>
-              <div><span>BLOCKED</span><strong id="multi-thread-metric-blocked">—</strong></div>
-              <div><span>CONTENTION</span><strong id="multi-thread-metric-contention">—</strong></div>
+              <div><span>ABORTED</span><strong id="multi-thread-metric-aborted">—</strong></div>
               <div><span>RUNTIME</span><strong id="multi-thread-metric-runtime">—</strong></div>
             </div>
             <div class="multi-thread-visuals">
               <div class="multi-thread-graph-wrap">
-                <div class="overline">Wait-for graph · waiter → lock owner</div>
+                <div id="multi-thread-graph-heading" class="overline">Wait-for graph · waiter → lock owner</div>
                 <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Multi-thread wait-for graph"></svg>
+                <div class="multi-graph-legend"><span class="is-cycle">Deadlock cycle</span><span class="is-wait">Waiting (no cycle)</span><span class="is-victim">Aborted victim</span></div>
               </div>
               <div class="multi-thread-status-wrap">
-                <div id="multi-thread-worker-heading" class="overline">Worker state at observed outcome</div>
-                <div id="multi-thread-worker-list" class="multi-thread-worker-list"></div>
+                <div id="multi-thread-worker-heading" class="overline">Per-thread results</div>
+                <div class="multi-thread-table-wrap">
+                  <table class="multi-thread-table">
+                    <thead><tr><th>Thread</th><th>OS id</th><th>Lock order</th><th>Waited</th><th>Outcome</th></tr></thead>
+                    <tbody id="multi-thread-worker-list"></tbody>
+                  </table>
+                </div>
               </div>
+            </div>
+            <div class="multi-thread-timeline-wrap">
+              <div class="overline">Thread timeline · when each thread waited and held locks</div>
+              <svg id="multi-thread-timeline" viewBox="0 0 720 200" role="img" aria-label="Per-thread lock timeline"></svg>
+              <div class="multi-graph-legend"><span class="is-hold">Holding lock(s)</span><span class="is-wait">Blocked waiting</span><span class="is-cycle">Deadlock detected</span><span class="is-done">Thread finished</span></div>
             </div>
           </div>
         </section>
