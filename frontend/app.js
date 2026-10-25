@@ -617,119 +617,342 @@ multiCountInput.addEventListener("change", () => {
   updateMultiThreadLabel();
 });
 
-// Ring layout: threads sit on one circle, every wait edge runs between ring
-// neighbours as an arc, lock names sit inside the ring, thread details sit
-// outside it, and the verdict is in the centre, so no two layers share space.
-function renderMultiThreadGraph(result, cycleNodes) {
+// ---------- Animated replay of a multi-thread run ----------
+// The backend's event log is turned into steps; each step is a full state
+// (lock owners, waits, per-thread status). A persistent SVG scene is built
+// once and only its attributes change between steps, so CSS transitions
+// animate lock tokens flying between threads and nodes changing state.
+//
+// Layout (no two layers share space): threads on a ring of radius R, wait
+// arrows as arcs on that ring, lock tokens on an inner ring, thread details
+// outside the ring, and the status in the centre.
+const replay = { frames: [], index: 0, timer: null, scene: null, result: null };
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function describeStep(event, merged, state) {
+  const t = event.thread, r = event.resource;
+  switch (event.action) {
+    case "start": return "Run started: " + state.count + " real threads, " + state.count + " locks";
+    case "requested": return t + " requests " + r;
+    case "waiting": return (merged ? t + " requests " + r + " → " : t + " ") + "must wait: " + r + " is held by " + event.owner;
+    case "acquired": return (merged ? t + " requests " + r + " → takes it" : t + " takes " + r + (event.wait_ms ? " after waiting " + event.wait_ms + " ms" : ""));
+    case "released": return t + " releases " + r;
+    case "aborted": return t + " is aborted: its wait for " + r + " is cancelled";
+    case "timeout": return t + " gave up waiting for " + r;
+    case "deadlock_detected": return "Deadlock detected: every thread waits for the next one";
+    case "recovery": return "Recovery: abort " + (replay.result.victim || "a victim") + " to break the cycle";
+    case "complete": return "All " + state.count + " threads finished";
+    default: return t + " " + event.action + (r ? " " + r : "");
+  }
+}
+
+function buildReplayFrames(result) {
+  const workers = result.workers || [];
+  const outcome = Object.fromEntries(workers.map(worker => [worker.thread, worker.outcome]));
+  const owners = {}, waits = {}, status = {}, worked = {};
+  workers.forEach(worker => { status[worker.thread] = "idle"; });
+  let cycleOn = false, recovered = false;
+  const frames = [];
+  const events = result.events;
+  const heldCount = thread => Object.values(owners).filter(owner => owner === thread).length;
+
+  for (let index = 0; index < events.length; index += 1) {
+    let event = events[index];
+    let merged = false;
+    // Fold "requested" into the wait/acquire that immediately follows it.
+    const next = events[index + 1];
+    if (event.action === "requested" && next && next.thread === event.thread && next.resource === event.resource &&
+        (next.action === "waiting" || next.action === "acquired")) {
+      event = next;
+      merged = true;
+      index += 1;
+    }
+    const t = event.thread, r = event.resource;
+    if (event.action === "requested") status[t] = "requesting";
+    if (event.action === "waiting") { waits[t] = r; status[t] = "waiting"; }
+    if (event.action === "acquired") {
+      owners[r] = t;
+      delete waits[t];
+      status[t] = heldCount(t) >= 2 ? "working" : "holding";
+      if (heldCount(t) >= 2) worked[t] = true;
+    }
+    if (event.action === "released" && owners[r] === t) {
+      delete owners[r];
+      if (heldCount(t) === 0) status[t] = status[t] === "aborted" ? "aborted" : worked[t] && outcome[t] === "completed" ? "finished" : "idle";
+      else if (status[t] === "working") status[t] = "releasing";
+    }
+    // Aborting the victim breaks the circular wait.
+    if (event.action === "aborted") { delete waits[t]; status[t] = "aborted"; cycleOn = false; }
+    if (event.action === "timeout") { delete waits[t]; status[t] = "aborted"; }
+    if (event.action === "deadlock_detected") cycleOn = true;
+    if (event.action === "recovery") recovered = true;
+    // The cycle highlight lasts while the threads in it are still waiting.
+    if (cycleOn && Object.keys(waits).length === 0) cycleOn = false;
+    frames.push({
+      event, merged, cycleOn, recovered,
+      owners: { ...owners }, waits: { ...waits }, status: { ...status },
+      caption: describeStep(event, merged, { count: workers.length }),
+      timeMs: event.time * 1000
+    });
+  }
+  return frames;
+}
+
+function buildReplayScene(result) {
   const graph = document.getElementById("multi-thread-graph");
   const workers = result.workers || [];
-  const snapshot = result.snapshot || { owners: {}, waits: {}, label: "none" };
+  const resources = result.resources || [];
   const count = workers.length;
   const viewWidth = Math.max(300, Math.min(960, Math.round(graph.getBoundingClientRect().width) || 720));
   const viewHeight = Math.round(Math.min(560, Math.max(320, viewWidth * 0.62)));
   const showNodeLabels = count <= 12 && viewWidth >= 520;
-  const showLockLabels = count <= 16;
   const centerX = viewWidth / 2, centerY = viewHeight / 2;
-  // Room around the ring for the outer labels plus a small margin; the node
-  // radius depends on the ring size, so size the ring, then the nodes, then
-  // shrink the ring by the node radius so no node touches the edge.
-  // Vertical room fits up to three label lines (holds / wants / aborted) below the bottom node.
-  const available = Math.min(centerX - (showNodeLabels ? 78 : 8), centerY - (showNodeLabels ? 54 : 8));
+  const step = Math.PI * 2 / count;
+  // Vertical room fits up to three label lines below the bottom node.
+  const available = Math.min(centerX - (showNodeLabels ? 100 : 8), centerY - (showNodeLabels ? 62 : 8));
   const nodeSize = ringRadius => Math.max(9, Math.min(24, (2 * ringRadius * Math.sin(Math.PI / Math.max(count, 2)) - 24) / 2));
   const nodeRadius = nodeSize(available - 24);
   const radius = Math.max(60, available - nodeRadius - 4);
+  // Lock tokens sit on an inner ring. Two limits size them: a token's spots
+  // are half a step from any other token's spots (so width <= chord), and a
+  // token must clear its node at any angle (node and token corners included).
+  // Solving both: rT = R - 1.42*nodeR - 0.59*w - 6 and w <= 2*rT*sin(step/4) - 6.
+  const sinQuarter = Math.sin(step / 4);
+  // Tiles also stay small relative to the ring so the centre keeps room for the status.
+  const tokenWidth = Math.max(8, Math.min(32, 0.4 * (radius - 1.42 * nodeRadius - 6), (2 * (radius - 1.42 * nodeRadius - 6) * sinQuarter - 6) / (1 + 1.18 * sinQuarter)));
+  const tokenHeight = Math.max(8, Math.min(18, tokenWidth * 0.62));
+  const tokenRadius = radius - 1.42 * nodeRadius - Math.hypot(tokenWidth, tokenHeight) / 2 - 6;
   const arrow = nodeRadius < 13 ? 6 : 8;
-  const indexOf = {};
-  const angleOf = {};
-  workers.forEach((worker, index) => {
-    indexOf[worker.thread] = index;
-    angleOf[worker.thread] = -Math.PI / 2 + index * Math.PI * 2 / count;
-  });
-  const point = (angle, r = radius) => ({ x: centerX + Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
   const fmt = value => value.toFixed(1);
+  const point = (angle, r = radius) => ({ x: centerX + Math.cos(angle) * r, y: centerY + Math.sin(angle) * r });
+  const angleOf = {}, indexOf = {};
+  workers.forEach((worker, index) => { indexOf[worker.thread] = index; angleOf[worker.thread] = -Math.PI / 2 + index * step; });
+  const normalize = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+  // Lock Rk rests between T(k-1) and Tk; a holder keeps it on the side facing that rest spot.
+  const homeAngle = {};
+  resources.forEach((resource, index) => { homeAngle[resource] = -Math.PI / 2 + index * step - step / 2; });
+  const tokenSpot = (resource, owner) => {
+    if (!owner || !(owner in angleOf)) return point(homeAngle[resource], tokenRadius);
+    const side = normalize(homeAngle[resource] - angleOf[owner]) < 0 ? -1 : 1;
+    return point(angleOf[owner] + side * step / 4, tokenRadius);
+  };
 
-  const edges = Object.entries(snapshot.waits)
-    .map(([waiter, resource]) => ({ waiter, resource, owner: snapshot.owners[resource] }))
-    .filter(edge => edge.owner && edge.owner in indexOf && edge.waiter in indexOf);
-
-  const edgeMarkup = edges.map(edge => {
-    const isCycle = cycleNodes.has(edge.waiter) && cycleNodes.has(edge.owner);
-    const from = indexOf[edge.waiter], to = indexOf[edge.owner];
-    const step = Math.PI * 2 / count;
-    const direction = (from + 1) % count === to ? 1 : (to + 1) % count === from ? -1 : 0;
-    let path, labelAt;
-    if (direction !== 0) {
-      // Arc along the ring between neighbouring threads.
-      const start = angleOf[edge.waiter] + direction * (nodeRadius + 3) / radius;
-      const end = angleOf[edge.waiter] + direction * (step - (nodeRadius + arrow) / radius);
-      const a = point(start), b = point(end);
-      path = "M " + fmt(a.x) + " " + fmt(a.y) + " A " + fmt(radius) + " " + fmt(radius) + " 0 0 " + (direction > 0 ? 1 : 0) + " " + fmt(b.x) + " " + fmt(b.y);
-      labelAt = point(angleOf[edge.waiter] + direction * step / 2, radius - nodeRadius - 12);
-    } else {
-      // Non-neighbour wait (not produced by the ring model): straight chord.
-      const a = point(angleOf[edge.waiter]), b = point(angleOf[edge.owner]);
-      const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length;
-      path = "M " + fmt(a.x + ux * (nodeRadius + 3)) + " " + fmt(a.y + uy * (nodeRadius + 3)) + " L " + fmt(b.x - ux * (nodeRadius + arrow)) + " " + fmt(b.y - uy * (nodeRadius + arrow));
-      labelAt = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    }
-    const label = showLockLabels
-      ? '<text class="mt-lock-label' + (isCycle ? " is-cycle" : "") + '" x="' + fmt(labelAt.x) + '" y="' + fmt(labelAt.y + 4) + '">' + escapeHtml(edge.resource) + '</text>'
-      : "";
-    return '<path class="multi-graph-edge' + (isCycle ? " is-cycle" : "") + '" d="' + path + '" marker-end="url(#' + (isCycle ? "multi-arrow-danger" : "multi-arrow") + ')"/>' + label;
-  }).join("");
+  const arcPath = (fromIndex, direction) => {
+    const fromAngle = -Math.PI / 2 + fromIndex * step;
+    const a = point(fromAngle + direction * (nodeRadius + 3) / radius);
+    const b = point(fromAngle + direction * (step - (nodeRadius + arrow) / radius));
+    return "M " + fmt(a.x) + " " + fmt(a.y) + " A " + fmt(radius) + " " + fmt(radius) + " 0 0 " + (direction > 0 ? 1 : 0) + " " + fmt(b.x) + " " + fmt(b.y);
+  };
+  // One hidden arc per thread and direction; a step reveals the ones in use.
+  let edgeMarkup = "";
+  workers.forEach((worker, index) => {
+    [1, -1].forEach(direction => {
+      if (count === 2 && direction === -1) return;
+      edgeMarkup += '<path class="multi-graph-edge mt-edge" data-from="' + worker.thread + '" data-dir="' + direction + '" d="' + arcPath(index, direction) + '"/>';
+    });
+  });
 
   const nodeMarkup = workers.map(worker => {
-    const angle = angleOf[worker.thread];
-    const center = point(angle);
-    const held = Object.entries(snapshot.owners).filter(([, owner]) => owner === worker.thread).map(([resource]) => resource);
-    const waiting = snapshot.waits[worker.thread];
-    const isVictim = worker.thread === result.victim;
-    const className = (cycleNodes.has(worker.thread) ? " is-cycle" : waiting ? " is-waiting" : held.length ? " is-holding" : "") + (isVictim ? " is-victim" : "");
-    let detail = "";
-    if (showNodeLabels) {
-      const anchorPoint = point(angle, radius + nodeRadius + 10);
-      const cos = Math.cos(angle), sin = Math.sin(angle);
-      const anchor = cos > 0.3 ? "start" : cos < -0.3 ? "end" : "middle";
-      const lines = [];
-      if (held.length) lines.push('<tspan class="is-hold">holds ' + escapeHtml(held.join("+")) + '</tspan>');
-      if (waiting) lines.push('<tspan class="is-want">wants ' + escapeHtml(waiting) + '</tspan>');
-      if (isVictim) lines.push('<tspan class="is-victim">aborted</tspan>');
-      const lineHeight = 12;
-      // Labels above the ring grow upward, labels below grow downward.
-      const firstY = anchorPoint.y + (sin < -0.3 ? -(lines.length - 1) * lineHeight - 2 : sin > 0.3 ? 10 : -((lines.length - 1) * lineHeight) / 2 + 4);
-      detail = '<text class="mt-node-detail" text-anchor="' + anchor + '">' + lines.map((line, index) =>
-        line.replace("<tspan ", '<tspan x="' + fmt(anchorPoint.x) + '" y="' + fmt(firstY + index * lineHeight) + '" ')).join("") + '</text>';
-    }
-    return '<g class="multi-graph-node' + className + '">' +
-      '<title>' + escapeHtml(worker.thread + " · OS thread " + worker.native_id + " · " + worker.outcome) + '</title>' +
-      '<circle cx="' + fmt(center.x) + '" cy="' + fmt(center.y) + '" r="' + fmt(nodeRadius) + '"/>' +
-      '<text class="multi-graph-id" x="' + fmt(center.x) + '" y="' + fmt(center.y + (nodeRadius < 13 ? 3 : 4)) + '" style="font-size:' + (nodeRadius < 13 ? 8 : nodeRadius < 18 ? 10 : 12) + 'px">' + worker.thread + '</text></g>' +
-      detail;
+    const center = point(angleOf[worker.thread]);
+    return '<g class="multi-graph-node mt-node st-idle" data-thread="' + worker.thread + '">' +
+      '<title>' + escapeHtml(worker.thread + " · OS thread " + worker.native_id) + '</title>' +
+      '<circle class="mt-spin" cx="' + fmt(center.x) + '" cy="' + fmt(center.y) + '" r="' + fmt(nodeRadius + 4) + '"/>' +
+      '<circle class="mt-body" cx="' + fmt(center.x) + '" cy="' + fmt(center.y) + '" r="' + fmt(nodeRadius) + '"/>' +
+      '<text class="multi-graph-id" x="' + fmt(center.x) + '" y="' + fmt(center.y + (nodeRadius < 13 ? 3 : 4)) + '" style="font-size:' + (nodeRadius < 13 ? 8 : nodeRadius < 18 ? 10 : 12) + 'px">' + worker.thread + '</text></g>';
   }).join("");
 
-  const isDeadlock = result.status === "deadlock";
-  const cycleLength = (result.metrics.deadlock_cycle || []).length - 1;
-  const headline = isDeadlock ? "DEADLOCK" : result.status === "completed" ? "NO CYCLE" : result.status.toUpperCase();
-  const subline = isDeadlock ? cycleLength + " threads in one cycle" : result.status === "completed" ? edges.length + " queued · all " + count + " finished" : "";
-  // Fit the centre text inside the ring of lock labels (monospace: ~0.62em per character).
-  const innerWidth = 2 * (radius - nodeRadius - 30);
-  const headlineSize = Math.max(12, Math.min(30, innerWidth / (headline.length * 0.75)));
-  const sublineSize = Math.min(12.5, innerWidth / (subline.length * 0.62));
-  const centerMarkup = '<text class="mt-center-title ' + (isDeadlock ? "is-danger" : "is-safe") + '" x="' + fmt(centerX) + '" y="' + fmt(centerY + (sublineSize >= 8 ? 2 : headlineSize * 0.35)) + '" style="font-size:' + fmt(headlineSize) + 'px">' + headline + '</text>' +
-    (sublineSize >= 8 ? '<text class="mt-center-sub" x="' + fmt(centerX) + '" y="' + fmt(centerY + headlineSize * 0.5 + 12) + '" style="font-size:' + fmt(sublineSize) + 'px">' + escapeHtml(subline) + '</text>' : "");
+  const detailMarkup = showNodeLabels ? workers.map(worker => {
+    const angle = angleOf[worker.thread];
+    // Diagonal positions need extra clearance because the node's box corner sticks out further.
+    const anchorPoint = point(angle, radius + nodeRadius * (1 + 0.42 * Math.abs(Math.sin(2 * angle))) + 8);
+    const cos = Math.cos(angle);
+    const anchor = cos > 0.3 ? "start" : cos < -0.3 ? "end" : "middle";
+    return '<text class="mt-node-detail" data-thread="' + worker.thread + '" data-x="' + fmt(anchorPoint.x) + '" data-y="' + fmt(anchorPoint.y) + '" data-sin="' + Math.sin(angle).toFixed(3) + '" text-anchor="' + anchor + '"></text>';
+  }).join("") : "";
 
+  const showTokenText = tokenWidth >= 18;
+  const tokenMarkup = resources.map(resource => {
+    const spot = tokenSpot(resource, null);
+    return '<g class="mt-token" data-resource="' + resource + '" style="transform: translate(' + fmt(spot.x) + 'px, ' + fmt(spot.y) + 'px)">' +
+      '<rect x="' + fmt(-tokenWidth / 2) + '" y="' + fmt(-tokenHeight / 2) + '" width="' + fmt(tokenWidth) + '" height="' + fmt(tokenHeight) + '" rx="' + fmt(Math.min(5, tokenHeight / 3)) + '"/>' +
+      (showTokenText ? '<text y="' + fmt(tokenHeight * 0.3) + '" style="font-size:' + fmt(Math.min(11, tokenHeight * 0.62)) + 'px">' + resource + '</text>' : "") + '</g>';
+  }).join("");
+
+  // Centre text must clear the lock tiles on the inner ring, measured by tile width.
+  const innerWidth = 2 * (tokenRadius - tokenWidth / 2 - 12);
   graph.setAttribute("viewBox", "0 0 " + viewWidth + " " + viewHeight);
   graph.innerHTML = '<defs>' +
     '<marker id="multi-arrow" markerUnits="userSpaceOnUse" markerWidth="' + arrow + '" markerHeight="' + arrow + '" refX="' + (arrow - 1) + '" refY="' + arrow / 2 + '" orient="auto"><path d="M0,0 L' + arrow + ',' + arrow / 2 + ' L0,' + arrow + ' z" fill="#ffb547"/></marker>' +
     '<marker id="multi-arrow-danger" markerUnits="userSpaceOnUse" markerWidth="' + arrow + '" markerHeight="' + arrow + '" refX="' + (arrow - 1) + '" refY="' + arrow / 2 + '" orient="auto"><path d="M0,0 L' + arrow + ',' + arrow / 2 + ' L0,' + arrow + ' z" fill="#ff4d6d"/></marker>' +
     '</defs>' +
     '<circle class="multi-graph-orbit" cx="' + fmt(centerX) + '" cy="' + fmt(centerY) + '" r="' + fmt(radius) + '"/>' +
-    centerMarkup + edgeMarkup + nodeMarkup;
-  graph.setAttribute("aria-label", count + " worker threads and " + edges.length + " wait-for edges");
-  document.getElementById("multi-thread-graph-heading").textContent = snapshot.label === "deadlock"
-    ? "Wait-for graph · the moment the deadlock was detected"
-    : "Wait-for graph · the moment the most threads were queued";
+    '<circle class="multi-graph-orbit mt-token-orbit" cx="' + fmt(centerX) + '" cy="' + fmt(centerY) + '" r="' + fmt(tokenRadius) + '"/>' +
+    '<text class="mt-center-title" x="' + fmt(centerX) + '" y="' + fmt(centerY + 2) + '"></text>' +
+    '<text class="mt-center-sub" x="' + fmt(centerX) + '" y="' + fmt(centerY + 20) + '"></text>' +
+    edgeMarkup + tokenMarkup + nodeMarkup + detailMarkup;
+  graph.classList.toggle("no-anim", reducedMotion);
+
+  const byData = (selector, key) => Object.fromEntries([...graph.querySelectorAll(selector)].map(el => [el.dataset[key], el]));
+  return {
+    graph, workers, count, tokenSpot, indexOf, innerWidth, centerY,
+    nodes: byData(".mt-node", "thread"),
+    details: byData(".mt-node-detail", "thread"),
+    tokens: byData(".mt-token", "resource"),
+    edges: [...graph.querySelectorAll(".mt-edge")],
+    title: graph.querySelector(".mt-center-title"),
+    sub: graph.querySelector(".mt-center-sub")
+  };
+}
+
+function setCenterText(scene, title, titleClass, sub) {
+  const fitSize = scene.innerWidth / (Math.max(title.length, 4) * 0.75);
+  // A small ring has no room in the middle; the caption above the graph carries the status then.
+  if (fitSize < 9) title = sub = "";
+  const titleSize = Math.min(28, fitSize);
+  const subSize = Math.min(12.5, scene.innerWidth / (Math.max(sub.length, 1) * 0.62));
+  scene.title.textContent = title;
+  scene.title.setAttribute("class", "mt-center-title " + titleClass);
+  scene.title.style.fontSize = titleSize.toFixed(1) + "px";
+  scene.title.setAttribute("y", (scene.centerY + (subSize >= 8 ? 2 : titleSize * 0.35)).toFixed(1));
+  scene.sub.textContent = subSize >= 8 ? sub : "";
+  scene.sub.style.fontSize = subSize.toFixed(1) + "px";
+  scene.sub.setAttribute("y", (scene.centerY + titleSize * 0.5 + 12).toFixed(1));
+}
+
+function renderReplayFrame(index) {
+  const scene = replay.scene, frame = replay.frames[index], result = replay.result;
+  if (!scene || !frame) return;
+  replay.index = index;
+  const cycle = new Set(result.metrics.deadlock_cycle || []);
+
+  Object.entries(scene.tokens).forEach(([resource, token]) => {
+    const owner = frame.owners[resource];
+    const spot = scene.tokenSpot(resource, owner);
+    token.style.transform = "translate(" + spot.x.toFixed(1) + "px, " + spot.y.toFixed(1) + "px)";
+    const waitedOn = Object.values(frame.waits).includes(resource);
+    token.setAttribute("class", "mt-token" + (owner ? " is-held" : " is-free") + (waitedOn ? " is-contended" : "") +
+      (frame.cycleOn && owner && cycle.has(owner) ? " is-cycle" : "") + (frame.event.resource === resource ? " is-active" : ""));
+  });
+
+  scene.edges.forEach(edge => {
+    const from = edge.dataset.from, direction = Number(edge.dataset.dir);
+    const resource = frame.waits[from];
+    const owner = resource ? frame.owners[resource] : null;
+    const target = owner ? scene.indexOf[owner] : -1;
+    const fromIndex = scene.indexOf[from];
+    const matches = owner && (direction > 0 ? (fromIndex + 1) % scene.count === target : (target + 1) % scene.count === fromIndex);
+    const isCycle = matches && frame.cycleOn && cycle.has(from) && cycle.has(owner);
+    edge.setAttribute("class", "multi-graph-edge mt-edge" + (matches ? " is-live" : "") + (isCycle ? " is-cycle" : ""));
+    edge.setAttribute("marker-end", matches ? "url(#" + (isCycle ? "multi-arrow-danger" : "multi-arrow") + ")" : "");
+  });
+
+  Object.entries(scene.nodes).forEach(([thread, node]) => {
+    const state = frame.status[thread];
+    const inCycle = frame.cycleOn && cycle.has(thread) && frame.waits[thread];
+    node.setAttribute("class", "multi-graph-node mt-node st-" + state + (inCycle ? " is-cycle" : "") + (frame.event.thread === thread ? " is-active" : "") +
+      (thread === result.victim && frame.recovered ? " is-victim" : ""));
+    const detail = scene.details[thread];
+    if (!detail) return;
+    const held = Object.entries(frame.owners).filter(([, owner]) => owner === thread).map(([resource]) => resource);
+    const lines = [];
+    if (held.length) lines.push(['is-hold', "holds " + held.join("+")]);
+    if (frame.waits[thread]) lines.push(['is-want', "wants " + frame.waits[thread]]);
+    if (state === "finished") lines.push(['is-done', "finished ✓"]);
+    if (state === "aborted") lines.push(['is-victim', "aborted ✕"]);
+    const x = detail.dataset.x, y = Number(detail.dataset.y), sin = Number(detail.dataset.sin);
+    const lineHeight = 12;
+    const firstY = y + (sin < -0.3 ? -(lines.length - 1) * lineHeight - 2 : sin > 0.3 ? 10 : -((lines.length - 1) * lineHeight) / 2 + 4);
+    detail.innerHTML = lines.map(([cls, text], line) =>
+      '<tspan class="' + cls + '" x="' + x + '" y="' + (firstY + line * lineHeight).toFixed(1) + '">' + escapeHtml(text) + '</tspan>').join("");
+  });
+
+  const last = index === replay.frames.length - 1;
+  const waitingCount = Object.keys(frame.waits).length;
+  if (frame.cycleOn) setCenterText(scene, "DEADLOCK", "is-danger", waitingCount + " threads stuck in a cycle");
+  else if (last) setCenterText(scene, result.status === "deadlock" ? "RECOVERED" : "NO CYCLE", "is-safe", Object.values(frame.status).filter(s => s === "finished").length + " of " + scene.count + " finished");
+  else if (frame.recovered) setCenterText(scene, "RECOVERING", "is-warning", "aborted " + result.victim + " · unwinding");
+  else setCenterText(scene, "RUNNING", "is-running", waitingCount ? waitingCount + " waiting" : Object.keys(frame.owners).length + " locks held");
+  scene.graph.classList.toggle("is-flash", frame.event.action === "deadlock_detected" && !reducedMotion);
+
+  document.getElementById("mt-caption-text").textContent = frame.caption;
+  document.getElementById("mt-caption-time").textContent = frame.timeMs.toFixed(1) + " ms";
+  document.getElementById("mt-caption").className = "mt-caption" +
+    (["deadlock_detected", "aborted", "timeout"].includes(frame.event.action) ? " is-danger" : frame.event.action === "waiting" ? " is-warning" :
+      ["acquired", "complete"].includes(frame.event.action) ? " is-safe" : frame.event.action === "recovery" ? " is-warning" : "");
+  document.getElementById("mt-step").textContent = (index + 1) + " / " + replay.frames.length;
+  document.getElementById("mt-scrub").value = index;
+  document.getElementById("mt-log").innerHTML = replay.frames.slice(Math.max(0, index - 4), index + 1).reverse()
+    .map((item, position) => '<li class="' + (position === 0 ? "is-current" : "") + '"><span>' + item.timeMs.toFixed(1) + ' ms</span>' + escapeHtml(item.caption) + '</li>').join("");
+  moveTimelinePlayhead(frame.timeMs);
+}
+
+function stopReplay() {
+  if (replay.timer !== null) { window.clearTimeout(replay.timer); replay.timer = null; }
+  const play = document.getElementById("mt-play");
+  if (play) { play.textContent = "▶"; play.setAttribute("aria-label", "Play replay"); }
+}
+
+function scheduleReplayStep() {
+  const speed = Number(document.getElementById("mt-speed").value);
+  const frame = replay.frames[replay.index];
+  // Linger on the moments that matter so they can be read.
+  const linger = frame && ["deadlock_detected", "recovery", "complete"].includes(frame.event.action) ? 3 : 1;
+  replay.timer = window.setTimeout(() => {
+    if (replay.index >= replay.frames.length - 1) { stopReplay(); return; }
+    renderReplayFrame(replay.index + 1);
+    scheduleReplayStep();
+  }, 520 * linger / speed);
+}
+
+function playReplay() {
+  if (replay.index >= replay.frames.length - 1) renderReplayFrame(0);
+  stopReplay();
+  const play = document.getElementById("mt-play");
+  play.textContent = "❚❚";
+  play.setAttribute("aria-label", "Pause replay");
+  scheduleReplayStep();
+}
+
+function startReplay(result) {
+  stopReplay();
+  replay.result = result;
+  replay.frames = buildReplayFrames(result);
+  replay.scene = buildReplayScene(result);
+  const scrub = document.getElementById("mt-scrub");
+  scrub.max = String(replay.frames.length - 1);
+  const count = (result.workers || []).length;
+  document.getElementById("mt-speed").value = count <= 6 ? "1" : count <= 12 ? "2" : count <= 20 ? "4" : "8";
+  const keyIndex = replay.frames.findIndex(frame => frame.event.action === "deadlock_detected");
+  const jump = document.getElementById("mt-jump");
+  jump.textContent = keyIndex >= 0 ? "Jump to deadlock" : "Jump to busiest moment";
+  renderReplayFrame(0);
+  if (!reducedMotion) playReplay();
+}
+
+function jumpToKeyMoment() {
+  stopReplay();
+  let target = replay.frames.findIndex(frame => frame.event.action === "deadlock_detected");
+  if (target < 0) {
+    let most = -1;
+    replay.frames.forEach((frame, index) => { const waiting = Object.keys(frame.waits).length; if (waiting > most) { most = waiting; target = index; } });
+  }
+  renderReplayFrame(Math.max(0, target));
+}
+
+document.getElementById("mt-play").addEventListener("click", () => (replay.timer === null ? playReplay() : stopReplay()));
+document.getElementById("mt-prev").addEventListener("click", () => { stopReplay(); renderReplayFrame(Math.max(0, replay.index - 1)); });
+document.getElementById("mt-next").addEventListener("click", () => { stopReplay(); renderReplayFrame(Math.min(replay.frames.length - 1, replay.index + 1)); });
+document.getElementById("mt-restart").addEventListener("click", () => { renderReplayFrame(0); playReplay(); });
+document.getElementById("mt-jump").addEventListener("click", jumpToKeyMoment);
+document.getElementById("mt-scrub").addEventListener("input", event => { stopReplay(); renderReplayFrame(Number(event.target.value)); });
+
+let timelineScale = null;
+function moveTimelinePlayhead(ms) {
+  const playhead = document.getElementById("mt-playhead");
+  if (!playhead || !timelineScale) return;
+  const position = timelineScale.x(ms).toFixed(1);
+  playhead.setAttribute("x1", position);
+  playhead.setAttribute("x2", position);
 }
 
 function renderMultiThreadTimeline(result) {
@@ -799,6 +1022,8 @@ function renderMultiThreadTimeline(result) {
     const tx = left + width * tick / 4;
     markup += '<text class="timeline-tick" text-anchor="' + (tick === 0 ? "start" : tick === 4 ? "end" : "middle") + '" x="' + tx + '" y="' + (chartBottom + 16) + '">' + Math.round(total * tick / 4) + ' ms</text>';
   }
+  markup += '<line id="mt-playhead" class="timeline-playhead" x1="' + left + '" x2="' + left + '" y1="' + (top - 4) + '" y2="' + chartBottom + '"/>';
+  timelineScale = { x };
   svg.setAttribute("viewBox", "0 0 " + viewWidth + " " + (height + 2));
   svg.innerHTML = markup;
 }
@@ -819,8 +1044,8 @@ function renderMultiThreadResult(result) {
   const isCompleted = result.status === "completed";
 
   panel.hidden = false;
-  renderMultiThreadGraph(result, cycleNodes);
   renderMultiThreadTimeline(result);
+  startReplay(result);
 
   const verdict = document.getElementById("multi-thread-verdict");
   verdict.className = "mt-verdict " + (isDeadlock ? "is-danger" : isCompleted ? "is-safe" : "is-warning");

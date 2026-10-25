@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=ring-11">
-  <script src="./trial-data.js?v=ring-11" defer></script>
-  <script src="./motion.js?v=ring-11" defer></script>
-  <script src="./app.js?v=ring-11" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=replay-6">
+  <script src="./trial-data.js?v=replay-6" defer></script>
+  <script src="./motion.js?v=replay-6" defer></script>
+  <script src="./app.js?v=replay-6" defer></script>
 </head>
 <body data-state="calm">
   <!-- Ambient layers: particle field, mesh orbs, grain -->
@@ -121,10 +121,26 @@
             </div>
             <p id="multi-thread-summary" class="multi-thread-summary"></p>
             <div class="mt-card">
-              <div id="multi-thread-graph-heading" class="overline">Wait-for graph</div>
-              <p class="mt-card-help">Each circle is a real thread. An arrow from one thread to the next means "waits for a lock held by". The lock name is shown inside the ring.</p>
-              <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Multi-thread wait-for graph"></svg>
-              <div class="multi-graph-legend"><span class="is-cycle">In the deadlock cycle</span><span class="is-wait">Waiting (no cycle)</span><span class="is-hold">Holding a lock</span><span class="is-victim">Aborted victim</span></div>
+              <div id="multi-thread-graph-heading" class="overline">Live replay · how the threads took and released locks</div>
+              <p class="mt-card-help">Each circle is a real thread and each small tile is a lock. Watch a tile move to the thread that takes it and back when it is released. A moving arrow means "waits for a lock held by".</p>
+              <div class="mt-player" role="group" aria-label="Replay controls">
+                <button id="mt-play" class="mt-btn mt-btn-main" type="button" aria-label="Play replay">▶</button>
+                <button id="mt-prev" class="mt-btn" type="button" aria-label="Previous step" title="Previous step">⟨</button>
+                <button id="mt-next" class="mt-btn" type="button" aria-label="Next step" title="Next step">⟩</button>
+                <button id="mt-restart" class="mt-btn" type="button" aria-label="Replay from start" title="Replay from start">↺</button>
+                <input id="mt-scrub" class="mt-scrub" type="range" min="0" max="0" value="0" aria-label="Replay position">
+                <span id="mt-step" class="mt-step">0 / 0</span>
+                <label class="mt-speed">Speed
+                  <select id="mt-speed" aria-label="Replay speed">
+                    <option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+                  </select>
+                </label>
+                <button id="mt-jump" class="mt-btn mt-btn-text" type="button">Jump to deadlock</button>
+              </div>
+              <div id="mt-caption" class="mt-caption"><span id="mt-caption-time" class="mt-caption-time"></span><strong id="mt-caption-text"></strong></div>
+              <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Animated replay of the multi-thread run"></svg>
+              <div class="multi-graph-legend"><span class="is-lock">Lock (free)</span><span class="is-hold">Holding</span><span class="is-work">Has both locks</span><span class="is-wait">Waiting</span><span class="is-cycle">Deadlock cycle</span><span class="is-done">Finished</span><span class="is-failed">Aborted</span></div>
+              <ol id="mt-log" class="mt-log" aria-label="Recent steps"></ol>
             </div>
             <div class="mt-card">
               <div class="overline">Thread timeline</div>
