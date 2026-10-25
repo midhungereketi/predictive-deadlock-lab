@@ -1,0 +1,251 @@
+{
+  "description": "Shared cases for the threat score formula. member3_analysis/threat_scorer.py and frontend/scoring.js must both reproduce every expected score and level; tests in member3_analysis/tests/test_scoring_consistency.py and frontend/tests/scoring.test.js enforce this.",
+  "cases": [
+    {
+      "name": "idle, default weights",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {},
+        "waits": {},
+        "wait_ms": 0,
+        "contention": 0,
+        "cycle": false
+      },
+      "expected": {
+        "score": 0,
+        "level": "LOW"
+      }
+    },
+    {
+      "name": "one lock held",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T1"
+        },
+        "waits": {},
+        "wait_ms": 0,
+        "contention": 0,
+        "cycle": false
+      },
+      "expected": {
+        "score": 3,
+        "level": "LOW"
+      }
+    },
+    {
+      "name": "both locks, different threads, nobody waiting",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T2"
+        },
+        "waits": {},
+        "wait_ms": 0,
+        "contention": 1,
+        "cycle": false
+      },
+      "expected": {
+        "score": 19,
+        "level": "LOW"
+      }
+    },
+    {
+      "name": "lock-order floor: T1 waits for B held by T2",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T2"
+        },
+        "waits": {
+          "T1": "B"
+        },
+        "wait_ms": 200,
+        "contention": 2,
+        "cycle": false
+      },
+      "expected": {
+        "score": 72,
+        "level": "HIGH"
+      }
+    },
+    {
+      "name": "deadlock cycle floor",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T2"
+        },
+        "waits": {
+          "T1": "B",
+          "T2": "A"
+        },
+        "wait_ms": 600,
+        "contention": 4,
+        "cycle": true
+      },
+      "expected": {
+        "score": 96,
+        "level": "CRITICAL_DEADLOCK"
+      }
+    },
+    {
+      "name": "protected: one thread holds both, other waits",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T1"
+        },
+        "waits": {
+          "T2": "A"
+        },
+        "wait_ms": 200,
+        "contention": 1,
+        "cycle": false
+      },
+      "expected": {
+        "score": 35,
+        "level": "LOW"
+      }
+    },
+    {
+      "name": "wait saturates at 800 ms",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {
+          "A": "T2",
+          "B": "T2"
+        },
+        "waits": {
+          "T1": "A"
+        },
+        "wait_ms": 1200,
+        "contention": 9,
+        "cycle": false
+      },
+      "expected": {
+        "score": 74,
+        "level": "HIGH"
+      }
+    },
+    {
+      "name": "custom weights favour waiting",
+      "weights": {
+        "w_blocked": 0.1,
+        "w_wait": 0.6,
+        "w_contention": 0.2,
+        "w_resource": 0.1,
+        "threshold_high": 50
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T1"
+        },
+        "waits": {
+          "T2": "A"
+        },
+        "wait_ms": 400,
+        "contention": 1,
+        "cycle": false
+      },
+      "expected": {
+        "score": 43,
+        "level": "ELEVATED"
+      }
+    },
+    {
+      "name": "custom high threshold: same state is not HIGH",
+      "weights": {
+        "w_blocked": 0.35,
+        "w_wait": 0.3,
+        "w_contention": 0.2,
+        "w_resource": 0.15,
+        "threshold_high": 90
+      },
+      "state": {
+        "owners": {
+          "A": "T1",
+          "B": "T2"
+        },
+        "waits": {
+          "T1": "B"
+        },
+        "wait_ms": 400,
+        "contention": 3,
+        "cycle": false
+      },
+      "expected": {
+        "score": 72,
+        "level": "ELEVATED"
+      }
+    },
+    {
+      "name": "half-way value rounds up (2.5 -> 3, not banker's 2)",
+      "weights": {
+        "w_blocked": 0.0,
+        "w_wait": 0.05,
+        "w_contention": 0.0,
+        "w_resource": 0.95,
+        "threshold_high": 70
+      },
+      "state": {
+        "owners": {},
+        "waits": {},
+        "wait_ms": 400,
+        "contention": 0,
+        "cycle": false
+      },
+      "expected": {
+        "score": 3,
+        "level": "LOW"
+      }
+    }
+  ]
+}

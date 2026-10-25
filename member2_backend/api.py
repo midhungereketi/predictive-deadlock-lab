@@ -4,9 +4,10 @@ Author: P. Satya Mani Shraavanth (Member 2)
 Course: BCSE303L - Operating Systems
 """
 
+import sys
 from pathlib import Path
 from typing import Any, Dict
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -15,7 +16,12 @@ from .experiment_runner import run_experiment, to_trial_v1
 from .schemas import ExperimentResult, MultiThreadExperimentRequest, RunExperimentRequest
 from .multi_thread_experiment import run_multi_thread_experiment
 
-analysis_scorer = None
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from member3_analysis.api_routes import request_scorer, router as analysis_router  # noqa: E402
+from member3_analysis.threat_scorer import ThreatScorer  # noqa: E402
 
 app = FastAPI(
     title="Predictive Deadlock Lab — Experiment Backend",
@@ -97,7 +103,7 @@ def run_custom_experiment(request: RunExperimentRequest) -> ExperimentResult:
 @app.post(
     "/api/experiments/multi-thread",
     response_model=ExperimentResult,
-    summary="Run a configurable 3–12 thread deadlock simulation",
+    summary="Run a configurable 2–32 thread resource-ring deadlock experiment",
 )
 def run_multi_thread_trial(request: MultiThreadExperimentRequest) -> ExperimentResult:
     result = run_multi_thread_experiment(
@@ -121,6 +127,7 @@ def run_multi_thread_trial(request: MultiThreadExperimentRequest) -> ExperimentR
 def run_trial_v1_post(
     mode: str,
     timeout: float = Query(DEFAULT_OVERALL_TIMEOUT_SECONDS, ge=0.5, le=30.0),
+    scorer: ThreatScorer = Depends(request_scorer),
 ) -> Dict[str, Any]:
     if mode not in ("vulnerable", "protected"):
         raise HTTPException(
@@ -128,7 +135,7 @@ def run_trial_v1_post(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return _convert_trial_response(result)
+    return _convert_trial_response(result, scorer)
 
 
 @app.get(
@@ -138,6 +145,7 @@ def run_trial_v1_post(
 def run_trial_v1_get(
     mode: str,
     timeout: float = Query(DEFAULT_OVERALL_TIMEOUT_SECONDS, ge=0.5, le=30.0),
+    scorer: ThreatScorer = Depends(request_scorer),
 ) -> Dict[str, Any]:
     if mode not in ("vulnerable", "protected"):
         raise HTTPException(
@@ -145,10 +153,10 @@ def run_trial_v1_get(
             detail=f"Invalid mode '{mode}'. Use 'vulnerable' or 'protected'.",
         )
     result = run_experiment(mode=mode, timeout_seconds=timeout)
-    return _convert_trial_response(result)
+    return _convert_trial_response(result, scorer)
 
 
-def _convert_trial_response(result: ExperimentResult) -> Dict[str, Any]:
+def _convert_trial_response(result: ExperimentResult, scorer: ThreatScorer) -> Dict[str, Any]:
     if result.status not in ("deadlock", "completed"):
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT if result.status == "timeout"
@@ -156,7 +164,7 @@ def _convert_trial_response(result: ExperimentResult) -> Dict[str, Any]:
             detail=result.error or "Experiment did not reach a valid terminal outcome.",
         )
     try:
-        return to_trial_v1(result, scorer=analysis_scorer)
+        return to_trial_v1(result, scorer=scorer)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,18 +172,8 @@ def _convert_trial_response(result: ExperimentResult) -> Dict[str, Any]:
         ) from exc
 
 
-# Include Member 3 Analysis & Forecasting API router
-import sys
-repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-try:
-    from member3_analysis.api_routes import router as analysis_router, shared_scorer
-    analysis_scorer = shared_scorer
-    app.include_router(analysis_router)
-except Exception as e:
-    print(f"Warning: Member 3 analysis router could not be loaded: {e}")
+# Member 3 Analysis & Forecasting API router (request-scoped scoring)
+app.include_router(analysis_router)
 
 # Mount frontend static files if available
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"

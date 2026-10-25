@@ -2,56 +2,75 @@
 
 Operating Systems case study: **Predictive Deadlock Prevention Using Contention Analysis and Score Forecasting**.
 
-## Current stage
+**Live app:** https://predictive-deadlock-lab.vercel.app/ (FastAPI backend and dashboard)
 
-- **Frontend (Member 1 — Midhun Gereketi):** Complete dashboard prototype located under [`frontend/`](frontend/). Open `frontend/index.html` for browser-based demo playback, Wait-For Graph, event timeline, threat score, contention heatmap, and side-by-side run comparisons.
-- **Backend (Member 2 — P. Satya Mani Shraavanth):** Real-thread experiment engine under [`member2_backend/`](member2_backend/). It runs controlled vulnerable and protected trials with bounded lock waits and exposes local FastAPI endpoints. The protected run first observes a cycle-free contention probe and derives a shared lock order from it.
-- **Analysis & Evaluation (Member 3 — M. Lakshman Sai):** Analysis code under [`member3_analysis/`](member3_analysis/). It builds a Wait-For Graph, detects cycles, scores observed contention, and compares repeated trials. The warning uses a documented structural heuristic for this controlled two-lock experiment.
+## What it does
 
-**Hosted integrated app:** https://predictive-deadlock-lab.vercel.app/ (FastAPI and frontend). The live buttons also work with the local FastAPI server. A separately hosted static preview cannot execute the Python backend. Batch results appear in the batch table; the side-by-side cards show the currently loaded individual trials.
+- **Two-thread experiment:** real threads deadlock over locks A and B (T1: A→B, T2: B→A). A Wait-For Graph confirms the cycle, and a weighted 0–100 risk score warns before it forms. Protected mode learns one global lock order from a cycle-free probe and always completes.
+- **N-thread ring (2–32 threads):** thread *Ti* needs locks *Ri* and *Ri+1*. Vulnerable mode forms one cycle through all N threads; a supervisor detects it and recovers by aborting the highest-numbered thread. Protected mode takes the lower-numbered lock first and always completes.
+- **Replay:** every run is animated from its real event log (lock tiles move, waits appear, the deadlock flashes, recovery unwinds), with step controls and a narrated caption.
+- **Analysis view:** peak score, first warning, deadlock time, warning lead time, a full-run risk chart and a per-event factor breakdown. Weight sliders re-score the run instantly.
+- **Compare view:** both modes side by side, repeated two-thread trials (deadlock/completion rates), and a scaling test with repeated trials per thread count (rates, mean ± sd, min–max). CSV export everywhere.
 
-**Submission material:** [`docs/FINAL_REPORT.md`](docs/FINAL_REPORT.md) contains the design, algorithm, measured 10-trial-per-mode results, and limitations. [`docs/DEMO_AND_PRESENTATION.md`](docs/DEMO_AND_PRESENTATION.md) has the demo steps, slide sequence, and viva answers. [`docs/results.json`](docs/results.json) contains the raw aggregate and per-trial measurements. The two `docs/sample-*.json` files can be imported into the dashboard.
+The warning is a documented heuristic evaluated in a controlled experiment; it is **not** a predictor of deadlocks in arbitrary programs.
 
-**Final submission files:** [`docs/submission/Final_Report.pdf`](docs/submission/Final_Report.pdf) is the printable report, and [`docs/submission/Presentation_Submission.pptx`](docs/submission/Presentation_Submission.pptx) is the editable eight-slide presentation. Both use the saved measurements in `docs/results.json`.
+## Scoring settings are per visitor
 
-## Quick Start & Running the Project
+Weights and threshold are applied in your browser immediately. They are kept in memory until you press **Save in this browser** (stored in that browser's local storage only), and they are sent with each backend request you start (`/api/trials/{mode}` and `/api/analysis/compare` accept `w_blocked`, `w_wait`, `w_contention`, `w_resource`, `threshold_high`). The server stores nothing, so one visitor cannot change another's results. `PUT /api/analysis/config` only validates values. `frontend/scoring.js` and `member3_analysis/threat_scorer.py` implement the same formula and are both tested against `shared/scoring_cases.json`.
 
-### 1. Install Backend Dependencies
+## Run locally
+
 ```bash
 pip install -r member2_backend/requirements.txt
+python -m uvicorn member2_backend.api:app --host 127.0.0.1 --port 8000
 ```
 
-### 2. Run Backend & Dashboard Server
+Open http://127.0.0.1:8000/.
+
+## Tests
+
 ```bash
-python -m uvicorn member2_backend.api:app --reload --host 127.0.0.1 --port 8000
+pip install -r requirements-dev.txt          # adds Playwright for the browser tests
+python -m pytest member2_backend/tests member3_analysis/tests tests/e2e
+node --test frontend/tests/trial-data.test.js frontend/tests/scoring.test.js
 ```
-Open **http://127.0.0.1:8000/** in your browser. You can run the built-in demo, click **"⚡ Run live backend trial"** to execute real OS threads, or click **"⚡ Run Batch Trials (5 Each)"** in the Compare tab for empirical statistical evaluation!
 
-For a configurable larger run, set **2–32 threads** with the slider or number box beside the live-run button and click **"⚡ Run N threads"**. Each run starts that many real OS threads on a ring of the same number of locks (worker *Ti* needs locks *Ri* and *Ri+1*, wrapping round to R1). Vulnerable mode makes every thread hold its first lock before requesting the next, so the wait-for graph is one cycle through **all** N threads; the supervisor detects it and recovers by aborting the highest-numbered thread. Protected mode takes locks in global order (lower number first), so all N threads finish. The dashboard shows the wait-for graph, a per-thread table with OS thread ids and outcomes, and a timeline of when each thread waited and held locks.
+The browser tests (`tests/e2e`) start a real FastAPI server and drive an installed Chrome. To use Playwright's bundled Chromium instead, run `python -m playwright install chromium` and set `E2E_BROWSER_CHANNEL=` (empty).
 
-### 3. Run Automated Tests
+## Measurements
+
+| File | What it is |
+| --- | --- |
+| [`docs/results.json`](docs/results.json) | **Saved** two-thread set, 10 trials per mode, collected 15 Oct 2026 |
+| [`docs/results_2026-10-26_two_thread.json`](docs/results_2026-10-26_two_thread.json) | **New** two-thread re-run, 10 trials per mode, collected 26 Oct 2026 |
+| [`docs/results_2026-10-26_scaling.json`](docs/results_2026-10-26_scaling.json) | **New** N-thread scaling set: 2, 4, 8, 16, 32 threads × 10 trials × both modes, with every raw run |
+| `docs/sample-*.json` | Real trials you can import into the dashboard |
+
+Collect a new set without overwriting the saved one:
+
 ```bash
-# Python Backend & Analysis Tests
-python -m pytest member2_backend/tests/ member3_analysis/tests/ -v
-
-# Member 3 Focused Analysis Tests
-python -m pytest member3_analysis/tests/ -v
-
-# Frontend Contract Tests (4 tests)
-node --test frontend/tests/trial-data.test.js
-
-# Repeat and replace the saved empirical comparison (10 trials per mode)
-python scripts/collect_results.py --trials 10
+python scripts/collect_results.py --trials 10 --output docs/<new-file>.json --skip-samples
+python scripts/collect_scaling_results.py --sizes 2 4 8 16 32 --trials 10 --output docs/<new-file>.json
 ```
 
-## Shared Integration Contracts
-- Shared event schema: [`shared/event_schema.md`](shared/event_schema.md)
-- Member 1 trial contract: [`frontend/contract/README.md`](frontend/contract/README.md)
-- Member 2 backend docs: [`member2_backend/README.md`](member2_backend/README.md)
-- Member 3 analysis docs: [`member3_analysis/README.md`](member3_analysis/README.md)
+## Submission material
+
+- [`docs/FINAL_REPORT.md`](docs/FINAL_REPORT.md) and [`docs/submission/Final_Report.pdf`](docs/submission/Final_Report.pdf): architecture, algorithms, workflow, evaluation protocol, results, limitations, literature review, team roles.
+- [`docs/submission/Presentation_Submission.pptx`](docs/submission/Presentation_Submission.pptx): editable slides.
+- [`docs/DEMO_AND_PRESENTATION.md`](docs/DEMO_AND_PRESENTATION.md): demo script and viva answers.
+- Build scripts: `scripts/build_submission_pdf.py` and `scripts/build_submission_slides.py`.
+
+## Project layout
+
+- `frontend/`: dashboard, replay, Analysis and Compare views, `scoring.js`
+- `member2_backend/`: threaded experiments, lock manager, N-thread ring, FastAPI app
+- `member3_analysis/`: Wait-For Graph, risk score, trend, heatmap, comparison, analysis API
+- `shared/`: event schema and shared scoring cases
+- `tests/e2e/`: browser-level tests
+- `scripts/`: measurement collection and document builders
 
 ## Team
 
-1. **Midhun Gereketi** — frontend, visualization UI, import path, and event contract.
-2. **P. Satya Mani Shraavanth** — multithreaded experiment engine, repeatable deadlock baseline, canonical lock ordering, and REST API.
-3. **M. Lakshman Sai** — contention analysis, scoring, graph detection, and comparative evaluation.
+1. **Midhun Gereketi**: frontend, replay and visualisation, Analysis/Compare views, integration and deployment.
+2. **P. Satya Mani Shraavanth**: multithreaded experiments, lock ordering, N-thread ring and recovery, REST API.
+3. **M. Lakshman Sai**: Wait-For Graph, risk scoring, contention analysis and comparative evaluation.

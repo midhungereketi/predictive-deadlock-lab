@@ -5,6 +5,7 @@ Course: BCSE303L - Operating Systems
 Project: Predictive Deadlock Prevention Using Contention Analysis and Score Forecasting
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -56,7 +57,7 @@ class ThreatScoreConfig:
             },
             "criticality": dict(self.criticality),
             "formula_documentation": (
-                "ThreatScore = round(w_b * B_norm + w_w * W_norm + w_c * C_norm + w_r * R_norm)\n"
+                "ThreatScore = round_half_up(w_b * B_norm + w_w * W_norm + w_c * C_norm + w_r * R_norm)\n"
                 "Where:\n"
                 "  B_norm = min(100, (num_blocked / max_threads) * 100)\n"
                 "  W_norm = min(100, (wait_duration_ms / max_wait_ms) * 100)\n"
@@ -122,6 +123,31 @@ class ThreatScorer:
 
     def __init__(self, config: Optional[ThreatScoreConfig] = None) -> None:
         self.config = config or ThreatScoreConfig()
+
+    @classmethod
+    def from_overrides(
+        cls,
+        w_blocked: Optional[float] = None,
+        w_wait: Optional[float] = None,
+        w_contention: Optional[float] = None,
+        w_resource: Optional[float] = None,
+        threshold_high: Optional[int] = None,
+    ) -> "ThreatScorer":
+        """Return a new scorer for one request; defaults fill any value not given.
+
+        Each call builds its own configuration, so one caller's weights can never
+        change the scores another caller receives.
+        """
+        scorer = cls()
+        if any(value is not None for value in (w_blocked, w_wait, w_contention, w_resource, threshold_high)):
+            scorer.update_config(
+                w_blocked=w_blocked,
+                w_wait=w_wait,
+                w_contention=w_contention,
+                w_resource=w_resource,
+                threshold_high=threshold_high,
+            )
+        return scorer
 
     def update_config(
         self,
@@ -207,7 +233,8 @@ class ThreatScorer:
         pts_resource = self.config.w_resource * r_norm
 
         raw_sum = pts_blocked + pts_wait + pts_contention + pts_resource
-        score = int(round(max(0.0, min(100.0, raw_sum))))
+        # Round half up (not Python's banker's rounding) so the browser's Math.round matches.
+        score = int(math.floor(max(0.0, min(100.0, raw_sum)) + 0.5))
         if not has_cycle and held_locks >= 2 and held_distinct >= 2 and blocked_count >= 1:
             score = max(score, self.config.inversion_warning_floor)
 

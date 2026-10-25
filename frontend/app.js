@@ -456,7 +456,7 @@ async function runLiveTrial(targetMode = mode) {
   try {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 8000);
-    const resp = await fetch("/api/trials/" + encodeURIComponent(targetMode), {
+    const resp = await fetch(withScoring("/api/trials/" + encodeURIComponent(targetMode)), {
       method: "POST",
       signal: controller.signal
     });
@@ -1035,9 +1035,10 @@ multiRunButton.addEventListener("click", runMultiThreadTrial);
 
 // ---------- Analysis and Compare tabs ----------
 // The browser re-scores recorded runs with the same formula as the backend
-// scorer (member3_analysis/threat_scorer.py), so weight changes show at once.
-const SCORE_DEFAULTS = { w_b: 0.35, w_w: 0.30, w_c: 0.20, w_r: 0.15, threshold: 70 };
-const SCORE_LIMITS = { maxThreads: 2, maxWaitMs: 800, maxContention: 5, lowThreshold: 40, inversionFloor: 72, cycleFloor: 96 };
+// scorer (frontend/scoring.js mirrors member3_analysis/threat_scorer.py), so
+// weight changes show at once.
+const SCORE_DEFAULTS = DeadlockScoring.DEFAULTS;
+const SCORE_LIMITS = DeadlockScoring.LIMITS;
 const CHART = { formula: "#3987e5", vulnerable: "#e66767", protected: "#199e70", warning: "#fab219", critical: "#d03b3b",
   factors: ["#3987e5", "#d95926", "#199e70", "#c98500"] };
 const analysisState = { mode: "vulnerable", selected: null, runKey: "" };
@@ -1052,32 +1053,8 @@ function readWeights() {
 }
 
 function scoreFrame(frame, cfg) {
-  const blocked = Object.keys(frame.waits).length;
-  const holders = Object.values(frame.owners);
-  const held = holders.length, distinct = new Set(holders).size;
-  const conflict = held >= 2 && distinct >= 2;
-  const factors = [
-    { label: "Blocked threads", weight: cfg.w_b, norm: Math.min(100, blocked / SCORE_LIMITS.maxThreads * 100), raw: blocked + " of " + SCORE_LIMITS.maxThreads + " threads blocked" },
-    { label: "Wait duration", weight: cfg.w_w, norm: Math.min(100, frame.waitMs / SCORE_LIMITS.maxWaitMs * 100), raw: frame.waitMs + " ms longest wait (full at " + SCORE_LIMITS.maxWaitMs + " ms)" },
-    { label: "Contention events", weight: cfg.w_c, norm: Math.min(100, frame.heat / SCORE_LIMITS.maxContention * 100), raw: frame.heat + " contention events (full at " + SCORE_LIMITS.maxContention + ")" },
-    { label: "Lock conflict", weight: cfg.w_r, norm: conflict ? 100 : held >= 2 ? 40 : held === 1 ? 20 : 0,
-      raw: conflict ? "A and B held by different threads" : held >= 2 ? "one thread holds both locks" : held === 1 ? "one lock held" : "no locks held" }
-  ];
-  factors.forEach(factor => { factor.points = factor.norm * factor.weight; });
-  const total = factors.reduce((sum, factor) => sum + factor.points, 0);
-  let score = Math.round(Math.max(0, Math.min(100, total)));
-  let rule = "";
-  const cycle = DeadlockTrialData.hasCycle(frame);
-  if (!cycle && conflict && blocked >= 1 && score < SCORE_LIMITS.inversionFloor) {
-    score = SCORE_LIMITS.inversionFloor;
-    rule = "Lock-order rule: different threads hold A and B and one of them is waiting, so the score is raised to at least " + SCORE_LIMITS.inversionFloor + ".";
-  }
-  if (cycle) {
-    if (score < SCORE_LIMITS.cycleFloor) rule = "Deadlock confirmed: the Wait-For Graph has a cycle, so the score is set to at least " + SCORE_LIMITS.cycleFloor + ".";
-    score = Math.max(score, SCORE_LIMITS.cycleFloor);
-  }
-  const level = cycle ? "DEADLOCK" : score >= cfg.threshold ? "HIGH" : score >= SCORE_LIMITS.lowThreshold ? "ELEVATED" : "LOW";
-  return { factors, total, score, rule, cycle, level, blocked };
+  return DeadlockScoring.scoreState({ owners: frame.owners, waits: frame.waits, waitMs: frame.waitMs, contention: frame.heat,
+    cycle: DeadlockTrialData.hasCycle(frame) }, cfg);
 }
 
 function analyzeRun(frames, cfg) {
@@ -1198,11 +1175,7 @@ function renderAnalysisTab() {
   step.value = String(selected);
   put("an-step-label", (selected + 1) + " / " + frames.length);
 
-  const sum = cfg.w_b + cfg.w_w + cfg.w_c + cfg.w_r;
-  const sumEl = document.getElementById("an-sum");
-  const sumOk = Math.abs(sum - 1) <= 0.001;
-  sumEl.textContent = "Weights total " + sum.toFixed(2) + (sumOk ? " ✓" : " · must be 1.00 to save (the chart still uses these values)");
-  sumEl.className = "an-sum" + (sumOk ? "" : " is-bad");
+  renderScoringStatus(cfg);
 }
 
 function renderAnalysisChart(result, cfg, selected) {
@@ -1324,7 +1297,7 @@ async function fetchLiveTrial(runMode) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch("/api/trials/" + encodeURIComponent(runMode), { method: "POST", signal: controller.signal });
+    const response = await fetch(withScoring("/api/trials/" + encodeURIComponent(runMode)), { method: "POST", signal: controller.signal });
     if (!response.ok) throw new Error("backend returned " + response.status);
     return storeTrial(await response.json(), "live");
   } finally {
@@ -1353,6 +1326,77 @@ anRunLive.addEventListener("click", withBusy(anRunLive, "⏳ Running real thread
   }
 }));
 
+// Scoring settings belong to one browser. They are kept in memory until saved,
+// then in this browser's localStorage only, and sent with each backend request
+// the user starts. Nothing is stored on the server, so visitors never share settings.
+const SCORING_STORAGE_KEY = "deadlock-lab.scoring.v1";
+const scoringStore = { saved: null, available: true };
+
+function sameWeights(a, b) {
+  return Boolean(a && b) && ["w_b", "w_w", "w_c", "w_r"].every(key => Math.abs(a[key] - b[key]) < 0.001) && a.threshold === b.threshold;
+}
+
+function loadSavedWeights() {
+  try {
+    const raw = window.localStorage.getItem(SCORING_STORAGE_KEY);
+    const value = raw ? JSON.parse(raw) : null;
+    return value && DeadlockScoring.isValid(value) ? value : null;
+  } catch (error) {
+    scoringStore.available = false;
+    return null;
+  }
+}
+
+function writeSavedWeights(cfg) {
+  try {
+    if (cfg) window.localStorage.setItem(SCORING_STORAGE_KEY, JSON.stringify(cfg));
+    else window.localStorage.removeItem(SCORING_STORAGE_KEY);
+    return true;
+  } catch (error) {
+    scoringStore.available = false;
+    return false;
+  }
+}
+
+// Query string carrying this user's weights to the backend (empty for defaults or invalid totals).
+function scoringQuery() {
+  const cfg = readWeights();
+  if (!DeadlockScoring.isValid(cfg) || sameWeights(cfg, SCORE_DEFAULTS)) return "";
+  return new URLSearchParams({ w_blocked: cfg.w_b, w_wait: cfg.w_w, w_contention: cfg.w_c, w_resource: cfg.w_r, threshold_high: cfg.threshold }).toString();
+}
+
+function withScoring(url) {
+  const query = scoringQuery();
+  return query ? url + (url.includes("?") ? "&" : "?") + query : url;
+}
+
+function renderScoringStatus(cfg) {
+  const valid = DeadlockScoring.isValid(cfg);
+  const sum = DeadlockScoring.weightSum(cfg);
+  const sumEl = document.getElementById("an-sum");
+  sumEl.textContent = "Weights total " + sum.toFixed(2) + (valid ? " ✓" : " · the chart uses these values, but backend trials use the defaults until the total is 1.00");
+  sumEl.className = "an-sum" + (valid ? "" : " is-bad");
+  // The Lab's warning banner follows the same threshold the user sees here.
+  if (valid) Object.assign(scoringConfig, cfg);
+
+  const scope = document.getElementById("an-scope");
+  let state, text;
+  if (sameWeights(cfg, scoringStore.saved)) {
+    state = "saved";
+    text = "Saved in this browser only (local storage on this device). Backend trials you start send these weights with the request; nothing is stored on the server, and other visitors keep their own settings.";
+  } else if (sameWeights(cfg, SCORE_DEFAULTS)) {
+    state = "default";
+    text = "Using the default weights" + (scoringStore.saved ? " (you have different weights saved in this browser; press Save to replace them)." : ". Nothing is stored.");
+  } else {
+    state = "temporary";
+    text = "Temporary: these weights last only until you reload this page" + (scoringStore.available ? " or press Save in this browser" : " because this browser blocks local storage") +
+      ". " + (valid ? "Backend trials you start now send them with the request." : "") + " Other visitors are not affected.";
+  }
+  scope.textContent = text;
+  scope.dataset.scope = state;
+  els.saveWeightsBtn.disabled = !valid || !scoringStore.available || state === "saved";
+}
+
 function setWeights(values) {
   els.inputWb.value = values.w_b; els.inputWw.value = values.w_w; els.inputWc.value = values.w_c; els.inputWr.value = values.w_r;
   els.inputTh.value = values.threshold;
@@ -1370,10 +1414,14 @@ function syncWeightLabels() {
 
 [els.inputWb, els.inputWw, els.inputWc, els.inputWr, els.inputTh].forEach(input =>
   input.addEventListener("input", () => { syncWeightLabels(); renderAnalysisTab(); }));
-document.getElementById("an-reset").addEventListener("click", () => setWeights(SCORE_DEFAULTS));
+document.getElementById("an-reset").addEventListener("click", () => {
+  scoringStore.saved = null;
+  writeSavedWeights(null);
+  setWeights(SCORE_DEFAULTS);
+});
 document.getElementById("an-normalize").addEventListener("click", () => {
   const cfg = readWeights();
-  const sum = cfg.w_b + cfg.w_w + cfg.w_c + cfg.w_r;
+  const sum = DeadlockScoring.weightSum(cfg);
   if (sum <= 0) { setWeights(SCORE_DEFAULTS); return; }
   // Round to the slider step (0.05) and push any rounding remainder onto the largest weight.
   const keys = ["w_b", "w_w", "w_c", "w_r"];
@@ -1384,33 +1432,11 @@ document.getElementById("an-normalize").addEventListener("click", () => {
   keys.forEach((key, index) => { next[key] = Math.max(0, scaled[index]).toFixed(2); });
   setWeights(next);
 });
-els.saveWeightsBtn.addEventListener("click", async () => {
+els.saveWeightsBtn.addEventListener("click", () => {
   const cfg = readWeights();
-  const sum = cfg.w_b + cfg.w_w + cfg.w_c + cfg.w_r;
-  const sumEl = document.getElementById("an-sum");
-  if (Math.abs(sum - 1) > 0.001) {
-    sumEl.textContent = "Weights total " + sum.toFixed(2) + " · press \"Make total 1.00\" before saving.";
-    sumEl.className = "an-sum is-bad";
-    return;
-  }
-  try {
-    const response = await fetch("/api/analysis/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ w_blocked: cfg.w_b, w_wait: cfg.w_w, w_contention: cfg.w_c, w_resource: cfg.w_r, threshold_high: cfg.threshold })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => null);
-      throw new Error(error?.detail || "backend returned " + response.status);
-    }
-    Object.assign(scoringConfig, cfg);
-    render();
-    sumEl.textContent = "Saved ✓ New backend trials will use these weights and threshold " + cfg.threshold + ".";
-    sumEl.className = "an-sum is-ok";
-  } catch (error) {
-    sumEl.textContent = "Could not save (" + error.message + "). Start the FastAPI server and try again.";
-    sumEl.className = "an-sum is-bad";
-  }
+  if (!DeadlockScoring.isValid(cfg)) return;
+  if (writeSavedWeights(cfg)) scoringStore.saved = cfg;
+  renderAnalysisTab();
 });
 
 function downloadCsv(filename, rows) {
@@ -1536,7 +1562,7 @@ let lastBatch = null;
 async function runBatchComparison() {
   const count = Number(document.getElementById("batch-count").value);
   const section = els.batchSection;
-  const response = await fetch("/api/analysis/compare?trials_per_mode=" + count + "&timeout=3.0", { method: "POST" });
+  const response = await fetch(withScoring("/api/analysis/compare?trials_per_mode=" + count + "&timeout=3.0"), { method: "POST" });
   if (!response.ok) throw new Error("backend returned " + response.status);
   const data = await response.json();
   lastBatch = data;
@@ -1575,9 +1601,15 @@ document.getElementById("batch-export").addEventListener("click", () => {
 });
 
 // ---------- Scaling test ----------
+// Repeated, bounded runs of the N-thread ring for each selected size. Each run
+// is its own short request, so no request can hang the page or the server.
 const SCALE_COUNTS = [2, 4, 8, 16, 32];
+const SCALE_REQUEST_TIMEOUT_MS = 20000;
+const SCALE_MAX_CONSECUTIVE_FAILURES = 3;
 const scaleSelected = new Set(SCALE_COUNTS);
 let scaleResults = [];
+let scaleErrors = [];
+let scaleStopRequested = false;
 document.getElementById("scale-counts").innerHTML = SCALE_COUNTS.map(count =>
   '<button type="button" class="cmp-count is-on" data-count="' + count + '" aria-pressed="true">' + count + '</button>').join("");
 document.getElementById("scale-counts").addEventListener("click", event => {
@@ -1589,101 +1621,195 @@ document.getElementById("scale-counts").addEventListener("click", event => {
   button.setAttribute("aria-pressed", String(scaleSelected.has(count)));
 });
 
+function runSummary(run, threads) {
+  const workers = run.workers || [];
+  const cycle = run.metrics.deadlock_cycle ? run.metrics.deadlock_cycle.length - 1 : 0;
+  return {
+    status: run.status,
+    runtimeMs: run.completion_time_ms,
+    cycleLength: cycle,
+    fullCycle: cycle === threads,
+    detectMs: run.snapshot && run.snapshot.label === "deadlock" ? Number(run.snapshot.time_ms) : null,
+    finished: run.metrics.threads_completed,
+    aborted: workers.filter(worker => worker.outcome === "aborted").length,
+    peakQueued: run.snapshot ? Object.keys(run.snapshot.waits).length : 0,
+    victim: run.victim || ""
+  };
+}
+
+function stats(values) {
+  if (!values.length) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const sd = values.length > 1 ? Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1)) : 0;
+  return { n: values.length, mean, sd, min: Math.min(...values), max: Math.max(...values) };
+}
+
+function sizeStats(entry) {
+  const v = entry.vulnerable, p = entry.protected;
+  return {
+    deadlocked: v.filter(run => run.status === "deadlock").length,
+    fullCycles: v.filter(run => run.fullCycle).length,
+    detect: stats(v.map(run => run.detectMs).filter(value => value !== null)),
+    vulnerableTime: stats(v.map(run => run.runtimeMs)),
+    completed: p.filter(run => run.status === "completed" && run.finished === entry.threads).length,
+    protectedTime: stats(p.map(run => run.runtimeMs))
+  };
+}
+
+function formatSpread(s) {
+  if (!s) return "—";
+  return Math.round(s.mean) + " ms ± " + Math.round(s.sd) + (s.n > 1 ? " (" + Math.round(s.min) + "–" + Math.round(s.max) + ")" : "");
+}
+
 function renderScaleChart() {
   const svg = document.getElementById("scale-chart");
   const wrap = svg.parentNode, tip = document.getElementById("scale-tip");
-  const height = 270;
+  const height = 280;
   const width = chartFrame(svg, height);
-  const m = { l: 52, r: 104, t: 16, b: 38 };
+  const m = { l: 56, r: 104, t: 16, b: 40 };
   const plotW = width - m.l - m.r, plotH = height - m.t - m.b;
-  const counts = scaleResults.map(item => item.threads);
-  const maxValue = niceMax(Math.max(1, ...scaleResults.flatMap(item => [item.vulnerable.completion_time_ms, item.protected.completion_time_ms])));
-  const x = index => m.l + (counts.length <= 1 ? plotW / 2 : index / (counts.length - 1) * plotW);
+  const rows = scaleResults.map(entry => ({ entry, s: sizeStats(entry) }));
+  const maxValue = niceMax(Math.max(1, ...rows.flatMap(row => [row.s.vulnerableTime?.max || 0, row.s.protectedTime?.max || 0])));
+  // Inset the sizes so the mode offsets (±7 px) never reach the axis labels or the label column.
+  const pad = 18;
+  const x = index => m.l + pad + (rows.length <= 1 ? (plotW - 2 * pad) / 2 : index / (rows.length - 1) * (plotW - 2 * pad));
   const y = value => m.t + (1 - value / maxValue) * plotH;
   yAxis(svg, { ticks: [0, 0.25, 0.5, 0.75, 1].map(f => f * maxValue), y, left: m.l, right: m.l + plotW, format: value => Math.round(value) + " ms" });
-  counts.forEach((count, index) => svg.appendChild(el("text", { class: "ch-axis-label", x: x(index), y: m.t + plotH + 18, "text-anchor": "middle" }, String(count))));
-  svg.appendChild(el("text", { class: "ch-axis-title", x: m.l + plotW + 8, y: m.t + plotH + 18 }, "threads →"));
+  rows.forEach((row, index) => svg.appendChild(el("text", { class: "ch-axis-label", x: x(index), y: m.t + plotH + 18, "text-anchor": "middle" }, String(row.entry.threads))));
+  svg.appendChild(el("text", { class: "ch-axis-title", x: m.l + plotW + 8, y: m.t + plotH + 18 }, "threads"));
   const ends = [];
-  ["vulnerable", "protected"].forEach(runMode => {
-    const values = scaleResults.map(item => item[runMode].completion_time_ms);
-    svg.appendChild(el("path", { class: "ch-line-" + (runMode === "vulnerable" ? "vuln" : "prot"),
-      d: values.map((value, index) => (index ? "L" : "M") + x(index).toFixed(1) + " " + y(value).toFixed(1)).join(" ") }));
-    values.forEach((value, index) => {
-      svg.appendChild(el("circle", { class: "ch-point-" + (runMode === "vulnerable" ? "vuln" : "prot"), cx: x(index), cy: y(value), r: 4.5 }));
-      const hit = el("circle", { class: "ch-hit", cx: x(index), cy: y(value), r: 12 });
+  [["vulnerable", "vulnerableTime", -7], ["protected", "protectedTime", 7]].forEach(([runMode, key, offset]) => {
+    const cls = runMode === "vulnerable" ? "vuln" : "prot";
+    const points = rows.map((row, index) => ({ row, index, s: row.s[key] })).filter(point => point.s);
+    if (!points.length) return;
+    svg.appendChild(el("path", { class: "ch-line-" + cls, d: points.map((point, order) => (order ? "L" : "M") + (x(point.index) + offset).toFixed(1) + " " + y(point.s.mean).toFixed(1)).join(" ") }));
+    points.forEach(point => {
+      const px = x(point.index) + offset;
+      // Whisker from the fastest to the slowest run.
+      svg.appendChild(el("line", { class: "ch-whisker-" + cls, x1: px, x2: px, y1: y(point.s.min), y2: y(point.s.max) }));
+      [point.s.min, point.s.max].forEach(value => svg.appendChild(el("line", { class: "ch-whisker-" + cls, x1: px - 4, x2: px + 4, y1: y(value), y2: y(value) })));
+      svg.appendChild(el("circle", { class: "ch-point-" + cls, cx: px, cy: y(point.s.mean), r: 4.5 }));
+      const hit = el("rect", { class: "ch-hit", x: px - 10, y: y(point.s.max) - 8, width: 20, height: Math.max(16, y(point.s.min) - y(point.s.max) + 16) });
       hit.addEventListener("mouseenter", () => {
-        const item = scaleResults[index], run = item[runMode];
         const box = svg.getBoundingClientRect(), scale = box.width / width;
-        placeTip(tip, wrap, x(index) * scale, y(value) * scale, "<b>" + item.threads + " threads · " + runMode + "</b><br>" + run.completion_time_ms + " ms · " +
-          (runMode === "vulnerable" ? (run.metrics.deadlock_cycle ? (run.metrics.deadlock_cycle.length - 1) + "-thread cycle, " : "") + run.metrics.threads_completed + " finished" : run.metrics.threads_completed + " of " + item.threads + " finished"));
+        placeTip(tip, wrap, px * scale, y(point.s.mean) * scale, "<b>" + point.row.entry.threads + " threads · " + runMode + "</b><br>" +
+          (runMode === "vulnerable" ? "Detection + recovery" : "Completion") + ": mean " + Math.round(point.s.mean) + " ms, sd " + Math.round(point.s.sd) +
+          " ms<br>range " + Math.round(point.s.min) + "–" + Math.round(point.s.max) + " ms over " + point.s.n + " run" + (point.s.n === 1 ? "" : "s"));
       });
       hit.addEventListener("mouseleave", () => { tip.hidden = true; });
       svg.appendChild(hit);
     });
-    if (values.length) ends.push({ runMode, y: y(values[values.length - 1]) });
+    ends.push({ runMode, y: y(points[points.length - 1].s.mean) + 4, gap: 18 });
   });
-  ends.forEach(end => { end.y += 4; end.gap = 18; });
   spreadLabels(ends, m.t + 8, m.t + plotH);
   ends.forEach(end => svg.appendChild(el("text", { class: "ch-end-label", x: m.l + plotW + 10, y: end.y }, end.runMode === "vulnerable" ? "Vulnerable" : "Protected")));
 }
 
 function renderScaleResults() {
-  document.getElementById("scale-rows").innerHTML = scaleResults.map(item => {
-    const v = item.vulnerable, p = item.protected;
-    const cycle = v.metrics.deadlock_cycle ? v.metrics.deadlock_cycle.length - 1 : 0;
-    const aborted = (v.workers || []).filter(worker => worker.outcome === "aborted").length;
-    return '<tr><td><strong>' + item.threads + '</strong></td><td>' + (cycle ? cycle + " threads" : "none") + '</td><td>' + (v.snapshot && v.snapshot.label === "deadlock" ? Number(v.snapshot.time_ms).toFixed(1) + " ms" : "—") + '</td><td>' +
-      v.metrics.threads_completed + ' / ' + aborted + '</td><td>' + v.completion_time_ms + ' ms</td><td>' + p.metrics.threads_completed + ' / ' + item.threads + '</td><td>' +
-      (p.snapshot ? Object.keys(p.snapshot.waits).length : 0) + '</td><td>' + p.completion_time_ms + ' ms</td></tr>';
+  document.getElementById("scale-rows").innerHTML = scaleResults.map(entry => {
+    const s = sizeStats(entry);
+    const failed = entry.failed.vulnerable + entry.failed.protected;
+    return '<tr><td><strong>' + entry.threads + '</strong></td>' +
+      '<td>' + s.deadlocked + ' / ' + entry.vulnerable.length + '</td>' +
+      '<td>' + s.fullCycles + ' / ' + entry.vulnerable.length + '</td>' +
+      '<td>' + (s.detect ? s.detect.mean.toFixed(1) + " ms" : "—") + '</td>' +
+      '<td>' + formatSpread(s.vulnerableTime) + '</td>' +
+      '<td>' + s.completed + ' / ' + entry.protected.length + '</td>' +
+      '<td>' + formatSpread(s.protectedTime) + '</td>' +
+      '<td class="' + (failed ? "cmp-failed" : "") + '">' + failed + '</td></tr>';
   }).join("");
   renderScaleChart();
-  const allCycles = scaleResults.every(item => (item.vulnerable.metrics.deadlock_cycle || []).length - 1 === item.threads);
-  const allProtected = scaleResults.every(item => item.protected.status === "completed" && item.protected.metrics.threads_completed === item.threads);
-  const detect = scaleResults.map(item => item.vulnerable.snapshot && item.vulnerable.snapshot.label === "deadlock" ? item.vulnerable.snapshot.time_ms : null).filter(value => value !== null);
-  const range = scaleResults.map(item => item.threads);
-  document.getElementById("scale-insight").textContent = scaleResults.length
-    ? (allCycles ? "In every vulnerable run the deadlock cycle went through all N threads (" + Math.min(...range) + "–" + Math.max(...range) + "), and it was detected within " + Math.max(...detect).toFixed(1) + " ms. " : "Not every vulnerable run formed a full-length cycle; check the table. ") +
-      (allProtected ? "Every protected run finished all of its threads. " : "Some protected runs did not finish all threads; check the table. ") +
-      "Vulnerable run time grows with thread count because, after the victim is aborted, the remaining threads finish one after another."
-    : "Results appear here after the test.";
+  const errorList = document.getElementById("scale-errors");
+  errorList.hidden = !scaleErrors.length;
+  errorList.innerHTML = scaleErrors.slice(-6).map(message => "<li>" + escapeHtml(message) + "</li>").join("") +
+    (scaleErrors.length > 6 ? "<li>… and " + (scaleErrors.length - 6) + " more</li>" : "");
+  const all = scaleResults.map(entry => ({ entry, s: sizeStats(entry) }));
+  const vulnerableRuns = all.reduce((sum, row) => sum + row.entry.vulnerable.length, 0);
+  const protectedRuns = all.reduce((sum, row) => sum + row.entry.protected.length, 0);
+  if (!vulnerableRuns && !protectedRuns) { document.getElementById("scale-insight").textContent = "No successful runs yet."; return; }
+  const deadlocked = all.reduce((sum, row) => sum + row.s.deadlocked, 0);
+  const fullCycles = all.reduce((sum, row) => sum + row.s.fullCycles, 0);
+  const completed = all.reduce((sum, row) => sum + row.s.completed, 0);
+  const sizes = all.map(row => row.entry.threads);
+  const detectMax = Math.max(0, ...all.map(row => row.s.detect ? row.s.detect.max : 0));
+  document.getElementById("scale-insight").textContent =
+    "Across " + sizes.length + " thread count" + (sizes.length === 1 ? "" : "s") + " (" + Math.min(...sizes) + "–" + Math.max(...sizes) + "): " +
+    deadlocked + " of " + vulnerableRuns + " vulnerable runs deadlocked, " + fullCycles + " with a cycle through every thread, detected within " + detectMax.toFixed(1) + " ms; " +
+    completed + " of " + protectedRuns + " protected runs completed every thread. " +
+    "Vulnerable time grows with the thread count because, after the victim is aborted, the remaining threads finish one after another." +
+    (scaleErrors.length ? " " + scaleErrors.length + " run" + (scaleErrors.length === 1 ? "" : "s") + " failed and " + (scaleErrors.length === 1 ? "is" : "are") + " excluded from these numbers." : "");
 }
 
-const scaleRun = document.getElementById("scale-run");
-scaleRun.addEventListener("click", withBusy(scaleRun, "⏳ Running...", async () => {
+async function runOneScaleTrial(threads, runMode) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), SCALE_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch("/api/experiments/multi-thread", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({ mode: runMode, thread_count: threads, timeout_seconds: 5 })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error((error && (typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail))) || "HTTP " + response.status);
+    }
+    return runSummary(await response.json(), threads);
+  } catch (error) {
+    throw new Error(error.name === "AbortError" ? "no response within " + SCALE_REQUEST_TIMEOUT_MS / 1000 + " s" : error.message);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+const scaleRunButton = document.getElementById("scale-run");
+const scaleStopButton = document.getElementById("scale-stop");
+scaleStopButton.addEventListener("click", () => { scaleStopRequested = true; scaleStopButton.disabled = true; });
+scaleRunButton.addEventListener("click", withBusy(scaleRunButton, "⏳ Running...", async () => {
   const counts = SCALE_COUNTS.filter(count => scaleSelected.has(count));
+  const trials = Number(document.getElementById("scale-trials").value);
   const progress = document.getElementById("scale-progress");
   document.getElementById("scale-section").hidden = false;
-  scaleResults = [];
+  scaleResults = counts.map(threads => ({ threads, vulnerable: [], protected: [], failed: { vulnerable: 0, protected: 0 } }));
+  scaleErrors = [];
+  scaleStopRequested = false;
+  scaleStopButton.hidden = false;
+  scaleStopButton.disabled = false;
   renderScaleResults();
-  const total = counts.length * 2;
-  let done = 0;
+  const total = counts.length * trials * 2;
+  let done = 0, consecutiveFailures = 0, stopReason = "";
   try {
-    for (const threads of counts) {
-      const entry = { threads };
-      for (const runMode of ["vulnerable", "protected"]) {
-        progress.textContent = "Running " + threads + " threads · " + runMode + " (" + (done + 1) + " of " + total + ")…";
-        const response = await fetch("/api/experiments/multi-thread", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: runMode, thread_count: threads, timeout_seconds: 5 }) });
-        if (!response.ok) throw new Error("backend returned " + response.status);
-        entry[runMode] = await response.json();
-        done += 1;
+    outer:
+    for (const entry of scaleResults) {
+      for (let trial = 1; trial <= trials; trial += 1) {
+        // Alternate the modes so slow drift on the server affects both equally.
+        for (const runMode of ["vulnerable", "protected"]) {
+          if (scaleStopRequested) { stopReason = "Stopped by you"; break outer; }
+          progress.textContent = "Running " + entry.threads + " threads · " + runMode + " · trial " + trial + " of " + trials + " (" + (done + 1) + " of " + total + ")…";
+          try {
+            entry[runMode].push(await runOneScaleTrial(entry.threads, runMode));
+            consecutiveFailures = 0;
+          } catch (error) {
+            entry.failed[runMode] += 1;
+            consecutiveFailures += 1;
+            scaleErrors.push(entry.threads + " threads · " + runMode + " · trial " + trial + ": " + error.message);
+            if (consecutiveFailures >= SCALE_MAX_CONSECUTIVE_FAILURES) { stopReason = "Stopped after " + consecutiveFailures + " failed runs in a row; check that the FastAPI server is running"; break outer; }
+          }
+          done += 1;
+          renderScaleResults();
+        }
       }
-      scaleResults.push(entry);
-      renderScaleResults();
     }
-    progress.textContent = "Finished " + total + " runs on real threads.";
-  } catch (error) {
-    progress.textContent = "Scaling test stopped (" + error.message + "). Start the FastAPI server and try again.";
+  } finally {
+    scaleStopButton.hidden = true;
+    renderScaleResults();
+    progress.textContent = (stopReason ? stopReason + ". " : "Finished. ") + done + " of " + total + " runs attempted, " + scaleErrors.length + " failed.";
   }
 }));
 document.getElementById("scale-export").addEventListener("click", () => {
   if (!scaleResults.length) return;
-  const rows = [["threads", "mode", "status", "cycle_length", "detected_ms", "finished", "aborted", "peak_queued", "run_time_ms"]];
-  scaleResults.forEach(item => ["vulnerable", "protected"].forEach(runMode => {
-    const run = item[runMode];
-    rows.push([item.threads, runMode, run.status, run.metrics.deadlock_cycle ? run.metrics.deadlock_cycle.length - 1 : 0,
-      run.snapshot && run.snapshot.label === "deadlock" ? run.snapshot.time_ms : "", run.metrics.threads_completed,
-      (run.workers || []).filter(worker => worker.outcome === "aborted").length, run.snapshot ? Object.keys(run.snapshot.waits).length : 0, run.completion_time_ms]);
-  }));
+  const rows = [["threads", "mode", "trial", "status", "runtime_ms", "runtime_meaning", "cycle_length", "cycle_through_all_threads", "detected_ms", "finished", "aborted", "victim", "peak_queued"]];
+  scaleResults.forEach(entry => ["vulnerable", "protected"].forEach(runMode => entry[runMode].forEach((run, index) => rows.push([
+    entry.threads, runMode, index + 1, run.status, run.runtimeMs, runMode === "vulnerable" ? "detection + recovery" : "completion",
+    run.cycleLength, run.fullCycle, run.detectMs ?? "", run.finished, run.aborted, run.victim, run.peakQueued]))));
   downloadCsv("deadlock-lab-scaling-test.csv", rows);
 });
 
@@ -1697,6 +1823,8 @@ window.addEventListener("resize", () => {
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => { renderAnalysisTab(); renderCompareChart(); if (scaleResults.length) renderScaleChart(); }, 150);
 });
+scoringStore.saved = loadSavedWeights();
+if (scoringStore.saved) setWeights(scoringStore.saved);
 syncWeightLabels();
 
 window.DeadlockLab = { loadTrial, restoreDemo, runLiveTrial, runBatchComparison };

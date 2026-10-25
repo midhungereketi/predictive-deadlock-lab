@@ -9,10 +9,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=tabs-8">
-  <script src="./trial-data.js?v=tabs-8" defer></script>
-  <script src="./motion.js?v=tabs-8" defer></script>
-  <script src="./app.js?v=tabs-8" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=final-4">
+  <script src="./trial-data.js?v=final-4" defer></script>
+  <script src="./scoring.js?v=final-4" defer></script>
+  <script src="./motion.js?v=final-4" defer></script>
+  <script src="./app.js?v=final-4" defer></script>
 </head>
 <body data-state="calm">
   <!-- Ambient layers: particle field, mesh orbs, grain -->
@@ -344,10 +345,11 @@
             <p id="an-sum" class="an-sum">Weights total 1.00 ✓</p>
             <div class="an-tuner-actions">
               <button id="an-normalize" class="chip-btn" type="button">Make total 1.00</button>
-              <button id="an-reset" class="chip-btn" type="button">Reset defaults</button>
-              <button id="save-weights-btn" class="chip-btn" type="button">Save as backend default</button>
+              <button id="save-weights-btn" class="chip-btn" type="button">Save in this browser</button>
+              <button id="an-reset" class="chip-btn" type="button">Reset to defaults</button>
             </div>
-            <p class="analysis-help">The chart and findings update as you drag. "Save as backend default" makes new backend trials use these weights.</p>
+            <p id="an-scope" class="an-scope" data-scope="default" aria-live="polite">Using the default weights. Nothing is stored.</p>
+            <p class="analysis-help">The chart and findings update as you drag. Your settings stay in your browser: they are sent with each backend trial you start and are never stored on the server, so other visitors are not affected.</p>
           </div></article>
         </div>
 
@@ -432,30 +434,37 @@
         </div></div>
 
         <div class="compare-toolbar panel cmp-section-bar"><div class="core">
-          <div><strong>3 · Scaling test</strong><span>Run the N-thread ring in both modes for several thread counts.</span></div>
+          <div><strong>3 · Scaling test</strong><span>Run the N-thread ring in both modes, several times for each thread count.</span></div>
           <div class="toolbar-actions">
             <div id="scale-counts" class="cmp-counts" role="group" aria-label="Thread counts to test"></div>
+            <label class="mt-speed">Trials per size
+              <select id="scale-trials" aria-label="Trials per thread count"><option value="1">1</option><option value="3" selected>3</option><option value="5">5</option><option value="10">10</option></select>
+            </label>
             <button id="scale-run" class="chip-btn" type="button">⚡ Run scaling test</button>
+            <button id="scale-stop" class="chip-btn" type="button" hidden>■ Stop</button>
           </div>
         </div></div>
         <div id="scale-section" class="panel" hidden><div class="core">
           <div class="panel-head">
-            <div><div class="overline">N-thread ring · real threads</div><h2>How the deadlock scales</h2></div>
+            <div><div class="overline">N-thread ring · real threads · repeated trials</div><h2>How the deadlock scales</h2></div>
             <button id="scale-export" class="chip-btn" type="button">↓ Export CSV</button>
           </div>
-          <p id="scale-progress" class="mt-card-help"></p>
+          <p id="scale-progress" class="mt-card-help" aria-live="polite"></p>
+          <ul id="scale-errors" class="cmp-errors" hidden></ul>
+          <p class="mt-card-help">The two times measure different things. <strong>Vulnerable</strong>: from start until the deadlock is detected, one victim is aborted and the other threads finish. <strong>Protected</strong>: from start until every thread completes. Dots are means; bars span the fastest to slowest run.</p>
           <div class="an-chart-wrap">
-            <svg id="scale-chart" viewBox="0 0 720 260" role="img" aria-label="Run time by thread count for both modes"></svg>
+            <svg id="scale-chart" viewBox="0 0 720 270" role="img" aria-label="Run time by thread count for both modes, mean with min to max range"></svg>
             <div id="scale-tip" class="an-tip" hidden></div>
           </div>
-          <div class="multi-graph-legend"><span class="is-vuln">Vulnerable (deadlock, then recovery)</span><span class="is-prot">Protected</span></div>
+          <div class="multi-graph-legend"><span class="is-vuln">Vulnerable: detection + recovery time</span><span class="is-prot">Protected: completion time</span></div>
           <div class="table-wrap">
             <table class="batch-table">
-              <thead><tr><th>Threads</th><th>Vulnerable: cycle length</th><th>Detected after</th><th>Finished / aborted</th><th>Run time</th><th>Protected: finished</th><th>Peak queued</th><th>Run time</th></tr></thead>
+              <thead><tr><th>Threads</th><th>Vulnerable: deadlocked</th><th>Cycle through all threads</th><th>Detected after (mean)</th><th>Detection + recovery time</th><th>Protected: completed</th><th>Completion time</th><th>Failed runs</th></tr></thead>
               <tbody id="scale-rows"></tbody>
             </table>
           </div>
-          <div class="batch-stat-card"><h3>What this shows</h3><p id="scale-insight">Results appear here after the test.</p></div>
+          <div class="batch-stat-card"><h3>What this shows</h3><p id="scale-insight">Results appear here after the test.</p>
+            <p class="cmp-disclaimer">These are controlled runs of one ring workload on this server. They show how this experiment behaves as threads are added; they are not a performance benchmark and do not measure how well the warning would predict deadlocks in other programs.</p></div>
         </div></div>
       </section>
 

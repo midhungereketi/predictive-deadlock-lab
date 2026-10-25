@@ -1,0 +1,1464 @@
+{
+  "collected_at_utc": "2026-10-25T19:22:17.235645+00:00",
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "protocol": {
+    "experiment": "N-thread resource ring: thread Ti needs locks Ri and R(i mod N)+1",
+    "vulnerable": "each thread takes its own lock, all threads rendezvous, then each requests the next lock; the supervisor detects the cycle and aborts the highest-numbered thread",
+    "protected": "each thread takes the lower-numbered lock first (global order); threads hold both locks for 30 ms",
+    "sizes": [
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "trials_per_size_per_mode": 10,
+    "per_run_timeout_seconds": 5.0,
+    "runtime_meaning": {
+      "vulnerable": "start to detection, victim abort and all other threads finishing",
+      "protected": "start to every thread completing"
+    },
+    "clock": "time.perf_counter (high-resolution monotonic)"
+  },
+  "sizes": [
+    {
+      "threads": 2,
+      "vulnerable": {
+        "runs": [
+          {
+            "status": "deadlock",
+            "runtime_ms": 39,
+            "cycle_length": 2,
+            "detected_ms": 2.51,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 44,
+            "cycle_length": 2,
+            "detected_ms": 1.83,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 47,
+            "cycle_length": 2,
+            "detected_ms": 1.46,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 46,
+            "cycle_length": 2,
+            "detected_ms": 1.72,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 46,
+            "cycle_length": 2,
+            "detected_ms": 1.77,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 47,
+            "cycle_length": 2,
+            "detected_ms": 1.62,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 49,
+            "cycle_length": 2,
+            "detected_ms": 1.46,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 45,
+            "cycle_length": 2,
+            "detected_ms": 1.94,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 45,
+            "cycle_length": 2,
+            "detected_ms": 1.91,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 46,
+            "cycle_length": 2,
+            "detected_ms": 1.91,
+            "finished": 1,
+            "aborted": 1,
+            "victim": "T2",
+            "peak_queued": 2,
+            "distinct_os_threads": 2,
+            "error": null
+          }
+        ],
+        "deadlocked": 10,
+        "cycle_through_all_threads": 10,
+        "recovered_one_victim": 10,
+        "detection_ms": {
+          "n": 10,
+          "mean": 1.81,
+          "sd": 0.3,
+          "min": 1.46,
+          "max": 2.51,
+          "median": 1.8
+        },
+        "detection_plus_recovery_runtime_ms": {
+          "n": 10,
+          "mean": 45.4,
+          "sd": 2.63,
+          "min": 39,
+          "max": 49,
+          "median": 46.0
+        }
+      },
+      "protected": {
+        "runs": [
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 61,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 61,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 61,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 61,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 2,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 1,
+            "distinct_os_threads": 2,
+            "error": null
+          }
+        ],
+        "completed_all_threads": 10,
+        "peak_queued": {
+          "n": 10,
+          "mean": 1,
+          "sd": 0.0,
+          "min": 1,
+          "max": 1,
+          "median": 1.0
+        },
+        "completion_runtime_ms": {
+          "n": 10,
+          "mean": 61.9,
+          "sd": 0.88,
+          "min": 61,
+          "max": 63,
+          "median": 62.0
+        }
+      }
+    },
+    {
+      "threads": 4,
+      "vulnerable": {
+        "runs": [
+          {
+            "status": "deadlock",
+            "runtime_ms": 106,
+            "cycle_length": 4,
+            "detected_ms": 2.11,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 107,
+            "cycle_length": 4,
+            "detected_ms": 1.83,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 110,
+            "cycle_length": 4,
+            "detected_ms": 2.17,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 105,
+            "cycle_length": 4,
+            "detected_ms": 1.96,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 106,
+            "cycle_length": 4,
+            "detected_ms": 1.98,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 108,
+            "cycle_length": 4,
+            "detected_ms": 2.09,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 106,
+            "cycle_length": 4,
+            "detected_ms": 1.86,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 105,
+            "cycle_length": 4,
+            "detected_ms": 2.19,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 111,
+            "cycle_length": 4,
+            "detected_ms": 1.7,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 108,
+            "cycle_length": 4,
+            "detected_ms": 1.77,
+            "finished": 3,
+            "aborted": 1,
+            "victim": "T4",
+            "peak_queued": 4,
+            "distinct_os_threads": 4,
+            "error": null
+          }
+        ],
+        "deadlocked": 10,
+        "cycle_through_all_threads": 10,
+        "recovered_one_victim": 10,
+        "detection_ms": {
+          "n": 10,
+          "mean": 1.97,
+          "sd": 0.17,
+          "min": 1.7,
+          "max": 2.19,
+          "median": 1.97
+        },
+        "detection_plus_recovery_runtime_ms": {
+          "n": 10,
+          "mean": 107.2,
+          "sd": 2.04,
+          "min": 105,
+          "max": 111,
+          "median": 106.5
+        }
+      },
+      "protected": {
+        "runs": [
+          {
+            "status": "completed",
+            "runtime_ms": 123,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 3,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 61,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 64,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 62,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 4,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 2,
+            "distinct_os_threads": 4,
+            "error": null
+          }
+        ],
+        "completed_all_threads": 10,
+        "peak_queued": {
+          "n": 10,
+          "mean": 2.1,
+          "sd": 0.32,
+          "min": 2,
+          "max": 3,
+          "median": 2.0
+        },
+        "completion_runtime_ms": {
+          "n": 10,
+          "mean": 68.6,
+          "sd": 19.13,
+          "min": 61,
+          "max": 123,
+          "median": 63.0
+        }
+      }
+    },
+    {
+      "threads": 8,
+      "vulnerable": {
+        "runs": [
+          {
+            "status": "deadlock",
+            "runtime_ms": 231,
+            "cycle_length": 8,
+            "detected_ms": 2.73,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 226,
+            "cycle_length": 8,
+            "detected_ms": 1.98,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 229,
+            "cycle_length": 8,
+            "detected_ms": 2.62,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 228,
+            "cycle_length": 8,
+            "detected_ms": 2.15,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 230,
+            "cycle_length": 8,
+            "detected_ms": 2.29,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 229,
+            "cycle_length": 8,
+            "detected_ms": 2.91,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 236,
+            "cycle_length": 8,
+            "detected_ms": 3.04,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 229,
+            "cycle_length": 8,
+            "detected_ms": 2.19,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 229,
+            "cycle_length": 8,
+            "detected_ms": 2.7,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 227,
+            "cycle_length": 8,
+            "detected_ms": 2.26,
+            "finished": 7,
+            "aborted": 1,
+            "victim": "T8",
+            "peak_queued": 8,
+            "distinct_os_threads": 8,
+            "error": null
+          }
+        ],
+        "deadlocked": 10,
+        "cycle_through_all_threads": 10,
+        "recovered_one_victim": 10,
+        "detection_ms": {
+          "n": 10,
+          "mean": 2.49,
+          "sd": 0.36,
+          "min": 1.98,
+          "max": 3.04,
+          "median": 2.46
+        },
+        "detection_plus_recovery_runtime_ms": {
+          "n": 10,
+          "mean": 229.4,
+          "sd": 2.72,
+          "min": 226,
+          "max": 236,
+          "median": 229.0
+        }
+      },
+      "protected": {
+        "runs": [
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 4,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 4,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 124,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 6,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 93,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 124,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 124,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 63,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 4,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 8,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 5,
+            "distinct_os_threads": 8,
+            "error": null
+          }
+        ],
+        "completed_all_threads": 10,
+        "peak_queued": {
+          "n": 10,
+          "mean": 4.8,
+          "sd": 0.63,
+          "min": 4,
+          "max": 6,
+          "median": 5.0
+        },
+        "completion_runtime_ms": {
+          "n": 10,
+          "mean": 93.9,
+          "sd": 24.92,
+          "min": 63,
+          "max": 124,
+          "median": 95.0
+        }
+      }
+    },
+    {
+      "threads": 16,
+      "vulnerable": {
+        "runs": [
+          {
+            "status": "deadlock",
+            "runtime_ms": 473,
+            "cycle_length": 16,
+            "detected_ms": 6.5,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 475,
+            "cycle_length": 16,
+            "detected_ms": 3.31,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 474,
+            "cycle_length": 16,
+            "detected_ms": 3.27,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 468,
+            "cycle_length": 16,
+            "detected_ms": 3.43,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 468,
+            "cycle_length": 16,
+            "detected_ms": 4.08,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 479,
+            "cycle_length": 16,
+            "detected_ms": 5.14,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 480,
+            "cycle_length": 16,
+            "detected_ms": 5.22,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 470,
+            "cycle_length": 16,
+            "detected_ms": 3.87,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 468,
+            "cycle_length": 16,
+            "detected_ms": 2.98,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 475,
+            "cycle_length": 16,
+            "detected_ms": 4.21,
+            "finished": 15,
+            "aborted": 1,
+            "victim": "T16",
+            "peak_queued": 16,
+            "distinct_os_threads": 16,
+            "error": null
+          }
+        ],
+        "deadlocked": 10,
+        "cycle_through_all_threads": 10,
+        "recovered_one_victim": 10,
+        "detection_ms": {
+          "n": 10,
+          "mean": 4.2,
+          "sd": 1.11,
+          "min": 2.98,
+          "max": 6.5,
+          "median": 3.98
+        },
+        "detection_plus_recovery_runtime_ms": {
+          "n": 10,
+          "mean": 473,
+          "sd": 4.45,
+          "min": 468,
+          "max": 480,
+          "median": 473.5
+        }
+      },
+      "protected": {
+        "runs": [
+          {
+            "status": "completed",
+            "runtime_ms": 96,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 64,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 8,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 96,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 66,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 8,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 125,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 10,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 96,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 95,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 16,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 9,
+            "distinct_os_threads": 16,
+            "error": null
+          }
+        ],
+        "completed_all_threads": 10,
+        "peak_queued": {
+          "n": 10,
+          "mean": 8.9,
+          "sd": 0.57,
+          "min": 8,
+          "max": 10,
+          "median": 9.0
+        },
+        "completion_runtime_ms": {
+          "n": 10,
+          "mean": 92.3,
+          "sd": 17.1,
+          "min": 64,
+          "max": 125,
+          "median": 95.0
+        }
+      }
+    },
+    {
+      "threads": 32,
+      "vulnerable": {
+        "runs": [
+          {
+            "status": "deadlock",
+            "runtime_ms": 964,
+            "cycle_length": 32,
+            "detected_ms": 7.28,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 965,
+            "cycle_length": 32,
+            "detected_ms": 5.55,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 972,
+            "cycle_length": 32,
+            "detected_ms": 6.98,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 969,
+            "cycle_length": 32,
+            "detected_ms": 6.78,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 970,
+            "cycle_length": 32,
+            "detected_ms": 8.0,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 966,
+            "cycle_length": 32,
+            "detected_ms": 6.2,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 967,
+            "cycle_length": 32,
+            "detected_ms": 5.41,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 965,
+            "cycle_length": 32,
+            "detected_ms": 6.53,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 975,
+            "cycle_length": 32,
+            "detected_ms": 6.8,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "deadlock",
+            "runtime_ms": 965,
+            "cycle_length": 32,
+            "detected_ms": 6.97,
+            "finished": 31,
+            "aborted": 1,
+            "victim": "T32",
+            "peak_queued": 32,
+            "distinct_os_threads": 32,
+            "error": null
+          }
+        ],
+        "deadlocked": 10,
+        "cycle_through_all_threads": 10,
+        "recovered_one_victim": 10,
+        "detection_ms": {
+          "n": 10,
+          "mean": 6.65,
+          "sd": 0.78,
+          "min": 5.41,
+          "max": 8.0,
+          "median": 6.79
+        },
+        "detection_plus_recovery_runtime_ms": {
+          "n": 10,
+          "mean": 967.8,
+          "sd": 3.61,
+          "min": 964,
+          "max": 975,
+          "median": 966.5
+        }
+      },
+      "protected": {
+        "runs": [
+          {
+            "status": "completed",
+            "runtime_ms": 97,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 18,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 98,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 18,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 100,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 17,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 70,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 16,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 98,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 18,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 98,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 17,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 99,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 17,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 99,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 18,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 97,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 18,
+            "distinct_os_threads": 32,
+            "error": null
+          },
+          {
+            "status": "completed",
+            "runtime_ms": 100,
+            "cycle_length": 0,
+            "detected_ms": null,
+            "finished": 32,
+            "aborted": 0,
+            "victim": null,
+            "peak_queued": 17,
+            "distinct_os_threads": 32,
+            "error": null
+          }
+        ],
+        "completed_all_threads": 10,
+        "peak_queued": {
+          "n": 10,
+          "mean": 17.4,
+          "sd": 0.7,
+          "min": 16,
+          "max": 18,
+          "median": 17.5
+        },
+        "completion_runtime_ms": {
+          "n": 10,
+          "mean": 95.6,
+          "sd": 9.06,
+          "min": 70,
+          "max": 100,
+          "median": 98.0
+        }
+      }
+    }
+  ]
+}

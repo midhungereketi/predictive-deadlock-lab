@@ -1,6 +1,10 @@
 """Collect reproducible local measurements and frontend-importable trial samples.
 
 Run from the repository root: python scripts/collect_results.py --trials 10
+
+By default this replaces docs/results.json and the two sample trials. Use
+--output docs/<new-file>.json --skip-samples to record a new measurement set
+without overwriting the saved one.
 """
 
 import argparse
@@ -25,6 +29,8 @@ def save(path: Path, data: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trials", type=int, default=10, choices=range(1, 21), metavar="1..20")
+    parser.add_argument("--output", default="docs/results.json", help="Where to write the measurements (relative to the repository root)")
+    parser.add_argument("--skip-samples", action="store_true", help="Do not regenerate docs/sample-*.json")
     args = parser.parse_args()
 
     comparator = ExperimentComparator()
@@ -42,15 +48,15 @@ def main() -> None:
         },
         "comparison": comparison,
     }
-    save(ROOT / "docs" / "results.json", output)
+    save(ROOT / args.output, output)
 
-    for mode in ("vulnerable", "protected"):
+    for mode in () if args.skip_samples else ("vulnerable", "protected"):
         trial = run_experiment(mode=mode, timeout_seconds=3.0)
         if trial.status not in ("deadlock", "completed"):
             raise RuntimeError(f"{mode} sample failed: {trial.status}: {trial.error}")
         save(ROOT / "docs" / f"sample-{mode}.json", to_trial_v1(trial))
 
-    print("Saved docs/results.json and both frontend-importable sample trials")
+    print("Saved " + args.output + ("" if args.skip_samples else " and both frontend-importable sample trials"))
     for mode in ("vulnerable", "protected"):
         row = comparison[mode]
         print(f"{mode}: {row['deadlock_count']}/{row['total_trials']} deadlocks; "

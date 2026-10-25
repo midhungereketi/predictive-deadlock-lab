@@ -99,12 +99,14 @@ Executes repeated trials (default $N=5$ per mode) on real threads via `member2_b
 
 ## 6. REST API Endpoints
 
-Mounted under `/api/analysis`:
-- `GET /api/analysis/config` — Retrieve current formula weights, thresholds, and formula documentation.
-- `PUT /api/analysis/config` — Dynamically update scoring weights and thresholds.
-- `POST /api/analysis/evaluate` — Run WFG, cycle detection, heatmap, and scoring on any event stream.
+Mounted under `/api/analysis`. Scoring weights are **request-scoped**: the server stores no scoring state, so one caller's weights never change another caller's results.
+- `GET /api/analysis/config` — The default formula weights, thresholds, and formula documentation.
+- `PUT /api/analysis/config` — Validate proposed weights and threshold (returns `"persisted": false`; nothing is stored).
+- `POST /api/analysis/evaluate` — Run WFG, cycle detection, heatmap, and scoring on any event stream; optional `"scoring": {...}` object with weights for this request.
 - `POST /api/analysis/compare?trials_per_mode=5&timeout=3.0` — Execute repeated trials and return statistical comparison.
 - `GET /api/analysis/compare?trials_per_mode=3` — Quick browser GET test.
+
+`/api/analysis/compare` and `/api/trials/{mode}` accept the optional query parameters `w_blocked`, `w_wait`, `w_contention`, `w_resource` and `threshold_high`; invalid values (weights not summing to 1.00) return 422.
 
 ---
 

@@ -2,44 +2,51 @@
 
 ## Before the demo
 
-From the repository root, install dependencies and start the server:
+Use the live app at <https://predictive-deadlock-lab.vercel.app/>, or run it locally from the repository root:
 
 ```text
 pip install -r member2_backend/requirements.txt
 python -m uvicorn member2_backend.api:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/` on the same computer. Check `http://127.0.0.1:8000/api/health` if the page does not load. Keep the server running while presenting. The hosted static preview can replay examples but cannot execute Python trials.
+Open `http://127.0.0.1:8000/` (check `/api/health` if the page does not load). Keep the server running while presenting. If the network fails, import `docs/sample-vulnerable.json` and `docs/sample-protected.json` with **Import trial JSON**; they are real saved trials. Never present the built-in browser demo values as measurements.
 
-The integrated app is also deployed at `https://predictive-deadlock-lab.vercel.app/`; the live buttons were verified there. If deployment access is restricted for another viewer, use the local server instructions above.
+## Six-minute live demonstration
 
-## Three-minute live demonstration
+1. **Midhun – Lab (two threads).** Click **Run live backend trial** in vulnerable mode, then **▶ Run simulation**. T1 holds A, T2 holds B, T1 waits for B: the risk score crosses 70 *before* T2 waits for A and the Wait-For Graph closes the cycle. Switch to protected mode and run again: a cycle-free probe, the learned A → B order, both workers finish.
+2. **Shraavanth – N-thread ring.** Set the thread slider to 8, vulnerable, **Run 8 threads**. Watch the replay: every thread takes its own lock, then waits for its neighbour; the cycle through all 8 threads flashes red; T8 is aborted and the others finish one after another. Point out the distinct OS thread ids in the table. Run protected with 32 threads: no cycle, all threads finish.
+3. **Lakshman – Analysis.** Open **Analysis**: "warned 400 ms early" on the demo, or the live run's lead time. Click events to show the factor breakdown. Drag the threshold to 80: the verdict becomes "deadlock not foreseen" – the warning is a tunable heuristic, not proof. Note the status line: settings are temporary or saved *in this browser only*; other visitors are not affected.
+4. **Lakshman – Compare.** **Run both modes on backend**, then **Run repeated trials** (5 each) for rates, then a **scaling test** (2–32 threads, 3 trials each). Explain that vulnerable time includes detection and recovery while protected time is completion only, and read the disclaimer.
 
-1. **Midhun:** Show the dashboard's timeline, Wait-For Graph, score trend, and heatmap. State that built-in playback is illustrative; click **Run live backend trial** for actual thread data.
-2. **Shraavanth:** Select vulnerable mode and run a live trial. Point out T1 holding A, T2 holding B, then T1 waiting for B. The score rises before T2 waits for A. Once both waits exist, the graph has a cycle and the supervisor reports deadlock. Explain bounded waits prevent an indefinite hang.
-3. **Lakshman:** Select protected mode and run a live trial. Show the warning during the safe probe, then policy activation, then both workers finishing under the derived common order. Run the batch comparison and explain rates, runtime, warning lead, and detection latency.
+## Suggested slide sequence (matches `docs/submission/Presentation_Submission.pptx`)
 
-If live execution fails, import `docs/sample-vulnerable.json` and `docs/sample-protected.json` to demonstrate real saved trial output. Do not call the built-in browser demo measured evidence.
-
-## Suggested slide sequence
-
-1. **Problem:** Opposite lock orders permit circular wait and service disruption.
-2. **Objective:** Observe contention, warn before a cycle in a controlled schedule, and remove circular wait through one shared lock order.
-3. **Architecture:** Browser → FastAPI → threaded experiments → event stream → graph, score, heatmap, comparison.
-4. **Vulnerable trace:** T1: A → B; T2: B → A; WFG cycle T1 → T2 → T1.
-5. **Risk calculation:** Four normalized factors plus a documented structural warning floor; warning is distinct from confirmed cycle.
-6. **Adaptive protected trace:** Cycle-free probe → observed A → B dependency → learned common A → B order → two completed workers.
-7. **Results:** 10/10 vulnerable deadlocks, 0/10 protected deadlocks, 10/10 protected completions in the saved controlled sample. Show timing figures from `docs/FINAL_REPORT.md`.
-8. **Limits and conclusion:** The schedule and two-lock scope explain why the result is a demonstration, not a universal predictor. A common total order prevents this case's circular wait.
+1. Title and team
+2. Problem: four deadlock conditions; circular wait from opposite lock order
+3. Architecture: browser → FastAPI → experiments → events → WFG, score, results
+4. Two-thread experiment: vulnerable trace and Wait-For Graph cycle
+5. Risk score: formula, rules, request-scoped weights; warning ≠ proof
+6. Prevention: learned global lock order (two threads) and ordered ring
+7. N-thread ring: cycle through all N threads and victim recovery
+8. Dashboard: replay, Analysis and Compare views
+9. Evaluation protocol
+10. Results: saved set (15 Oct) and new set (26 Oct) side by side
+11. Scaling results with spread
+12. Literature review (2020–2025)
+13. Limitations and conclusion
+14. Team roles and testing
 
 ## Likely viva questions
 
-**What proves a deadlock?** A cycle in the Wait-For Graph while each waiting thread holds one of the two single-instance resources. A score alone does not prove it.
+**What proves a deadlock?** A cycle in the Wait-For Graph with single-instance locks. The score alone never does.
 
-**Why is the warning early?** In the staged vulnerable schedule, one cross-resource wait exists while T2 still has not requested A. The structural rule crosses the warning threshold at that time.
+**Why does the warning come early?** In the staged schedule one cross-resource wait exists while T2 has not yet requested A; the lock-order rule raises the score to 72 at that moment, using only the current snapshot.
 
-**Why does common ordering work?** If every worker acquires A before B, no worker can hold B while waiting for A. The cycle's opposite edge cannot form.
+**Does the project predict deadlocks in any program?** No. The warning is a documented heuristic measured in a controlled experiment. Sound and complete prediction is intractable in general (Tunç et al., PLDI 2023).
 
-**Is the policy learned during a deadlock?** No. The protected calibration probe stops before the second conflicting request and records a cycle-free wait. The learned order applies to the main protected phase.
+**Why does a global lock order prevent deadlock?** If every thread acquires locks in the same order, no thread can hold a later lock while waiting for an earlier one, so the cycle's closing edge cannot form.
 
-**Can the static website run the backend?** No. Use the local FastAPI server for live experiments. The static page is useful for playback and importing recorded trials.
+**How does the ring recover?** The supervisor finds the cycle in a consistent snapshot and cancels the blocked acquire of the highest-numbered thread; it releases its lock, which unblocks its neighbour, and the chain unwinds.
+
+**Why does vulnerable time grow with N?** After recovery the threads finish one after another, each holding both locks for 30 ms, so the time grows by about 30 ms per thread.
+
+**Can one visitor change another's weights?** No. Weights live in each browser and are sent with that visitor's own requests; the server stores nothing. This is covered by automated tests.

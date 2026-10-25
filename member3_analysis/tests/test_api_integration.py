@@ -22,14 +22,18 @@ class TestMember3ApiEndpoints(unittest.TestCase):
         self.assertIn("thresholds", data)
         self.assertIn("formula_documentation", data)
 
-    def test_update_scoring_config(self) -> None:
+    def test_put_config_validates_without_storing(self) -> None:
         update_payload = {"w_blocked": 0.40, "w_wait": 0.25, "threshold_high": 75}
         resp = self.client.put("/api/analysis/config", json=update_payload)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data["status"], "updated")
+        self.assertEqual(data["status"], "validated")
+        self.assertFalse(data["persisted"])
         self.assertEqual(data["config"]["weights"]["blocked"], 0.40)
         self.assertEqual(data["config"]["thresholds"]["high"], 75)
+        defaults = self.client.get("/api/analysis/config").json()
+        self.assertEqual(defaults["weights"]["blocked"], 0.35)
+        self.assertEqual(defaults["thresholds"]["high"], 70)
 
     def test_rejects_weights_that_do_not_sum_to_one(self) -> None:
         resp = self.client.put("/api/analysis/config", json={"w_blocked": 0.90})
