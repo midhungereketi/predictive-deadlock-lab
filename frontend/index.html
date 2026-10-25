@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=ring-6">
-  <script src="./trial-data.js?v=ring-6" defer></script>
-  <script src="./motion.js?v=ring-6" defer></script>
-  <script src="./app.js?v=ring-6" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=ring-11">
+  <script src="./trial-data.js?v=ring-11" defer></script>
+  <script src="./motion.js?v=ring-11" defer></script>
+  <script src="./app.js?v=ring-11" defer></script>
 </head>
 <body data-state="calm">
   <!-- Ambient layers: particle field, mesh orbs, grain -->
@@ -107,35 +107,39 @@
               <div><div class="overline">Configurable live experiment</div><h2 id="multi-thread-title">Multi-thread run</h2></div>
               <span id="multi-thread-status" class="outline-badge">WAITING</span>
             </div>
-            <p id="multi-thread-summary" class="multi-thread-summary"></p>
+            <div id="multi-thread-verdict" class="mt-verdict">
+              <span id="multi-thread-verdict-icon" class="mt-verdict-icon" aria-hidden="true"></span>
+              <div><strong id="multi-thread-verdict-title"></strong><span id="multi-thread-verdict-detail"></span></div>
+            </div>
             <div class="multi-thread-metrics" aria-label="Run metrics">
               <div><span>THREADS STARTED</span><strong id="multi-thread-metric-workers">—</strong></div>
-              <div><span>OS THREAD IDS</span><strong id="multi-thread-metric-os">—</strong></div>
+              <div><span>DISTINCT OS THREADS</span><strong id="multi-thread-metric-os">—</strong></div>
               <div><span>CYCLE LENGTH</span><strong id="multi-thread-metric-cycle">—</strong></div>
-              <div><span>COMPLETED</span><strong id="multi-thread-metric-completed">—</strong></div>
+              <div><span>FINISHED</span><strong id="multi-thread-metric-completed">—</strong></div>
               <div><span>ABORTED</span><strong id="multi-thread-metric-aborted">—</strong></div>
               <div><span>RUNTIME</span><strong id="multi-thread-metric-runtime">—</strong></div>
             </div>
-            <div class="multi-thread-visuals">
-              <div class="multi-thread-graph-wrap">
-                <div id="multi-thread-graph-heading" class="overline">Wait-for graph · waiter → lock owner</div>
-                <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Multi-thread wait-for graph"></svg>
-                <div class="multi-graph-legend"><span class="is-cycle">Deadlock cycle</span><span class="is-wait">Waiting (no cycle)</span><span class="is-victim">Aborted victim</span></div>
-              </div>
-              <div class="multi-thread-status-wrap">
-                <div id="multi-thread-worker-heading" class="overline">Per-thread results</div>
-                <div class="multi-thread-table-wrap">
-                  <table class="multi-thread-table">
-                    <thead><tr><th>Thread</th><th>OS id</th><th>Lock order</th><th>Waited</th><th>Outcome</th></tr></thead>
-                    <tbody id="multi-thread-worker-list"></tbody>
-                  </table>
-                </div>
-              </div>
+            <p id="multi-thread-summary" class="multi-thread-summary"></p>
+            <div class="mt-card">
+              <div id="multi-thread-graph-heading" class="overline">Wait-for graph</div>
+              <p class="mt-card-help">Each circle is a real thread. An arrow from one thread to the next means "waits for a lock held by". The lock name is shown inside the ring.</p>
+              <svg id="multi-thread-graph" viewBox="0 0 720 420" role="img" aria-label="Multi-thread wait-for graph"></svg>
+              <div class="multi-graph-legend"><span class="is-cycle">In the deadlock cycle</span><span class="is-wait">Waiting (no cycle)</span><span class="is-hold">Holding a lock</span><span class="is-victim">Aborted victim</span></div>
             </div>
-            <div class="multi-thread-timeline-wrap">
-              <div class="overline">Thread timeline · when each thread waited and held locks</div>
+            <div class="mt-card">
+              <div class="overline">Thread timeline</div>
+              <p class="mt-card-help">One row per thread, left to right in milliseconds: amber while blocked, cyan while holding locks, a dot when the thread exits.</p>
               <svg id="multi-thread-timeline" viewBox="0 0 720 200" role="img" aria-label="Per-thread lock timeline"></svg>
-              <div class="multi-graph-legend"><span class="is-hold">Holding lock(s)</span><span class="is-wait">Blocked waiting</span><span class="is-cycle">Deadlock detected</span><span class="is-done">Thread finished</span></div>
+              <div class="multi-graph-legend"><span class="is-wait">Blocked waiting</span><span class="is-hold">Holding lock(s)</span><span class="is-cycle">Deadlock detected</span><span class="is-done">Finished</span><span class="is-failed">Aborted</span></div>
+            </div>
+            <div class="mt-card">
+              <div id="multi-thread-worker-heading" class="overline">Per-thread results</div>
+              <div class="multi-thread-table-wrap">
+                <table class="multi-thread-table">
+                  <thead><tr><th>Thread</th><th>OS thread id</th><th>Lock order</th><th>Time waiting</th><th>Result</th></tr></thead>
+                  <tbody id="multi-thread-worker-list"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
