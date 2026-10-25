@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=replay-6">
-  <script src="./trial-data.js?v=replay-6" defer></script>
-  <script src="./motion.js?v=replay-6" defer></script>
-  <script src="./app.js?v=replay-6" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=tabs-8">
+  <script src="./trial-data.js?v=tabs-8" defer></script>
+  <script src="./motion.js?v=tabs-8" defer></script>
+  <script src="./app.js?v=tabs-8" defer></script>
 </head>
 <body data-state="calm">
   <!-- Ambient layers: particle field, mesh orbs, grain -->
@@ -288,54 +288,93 @@
 
       <!-- ============ ANALYSIS ============ -->
       <section id="view-analysis" class="view" aria-labelledby="analysis-title">
-        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Trial analysis · 02</div><h1 id="analysis-title" class="split">Where contention <em>builds.</em></h1><p data-reveal>Track the signals behind the warning in the current demo, imported file, or FastAPI trial.</p></div>
-        <div class="bento">
-          <article class="panel span-12" data-reveal><div class="core">
-            <div class="panel-head"><div><div class="overline">Trend &amp; forecast</div><h2>Current risk trajectory</h2></div><div class="badge-row"><span id="analysis-lead-badge" class="outline-badge" style="display:none;">LEAD: -- ms</span><span id="analysis-status" class="outline-badge">IDLE</span></div></div>
-            <div id="analysis-bars" class="analysis-bars"></div>
-            <p class="analysis-help">The score combines lock-order inversion, blocked threads, waiting time, and resource contention. It is an illustrative heuristic, not a guarantee.</p>
-          </div></article>
-          <article class="panel span-6" data-reveal><div class="core">
-            <div class="panel-head"><div><div class="overline">Lock ownership</div><h2>Resource state</h2></div></div>
-            <div class="resource-state"><div><span><i class="res-square res-a"></i> Resource A</span><b id="analysis-owner-a">FREE</b></div><div><span><i class="res-square res-b"></i> Resource B</span><b id="analysis-owner-b">FREE</b></div></div>
-            <p id="analysis-waits" class="analysis-help">No thread is waiting for a resource.</p>
-          </div></article>
-          <article class="panel span-6" data-reveal><div class="core">
-            <div class="panel-head"><div><div class="overline">Order tracker</div><h2>Acquisition paths</h2></div></div>
-            <div class="path-card"><span>THREAD 01</span><strong>A <i>→</i> B</strong></div>
-            <div class="path-card"><span>THREAD 02</span><strong id="analysis-t2-path">B <i>→</i> A</strong></div>
-            <p id="analysis-order-note" class="analysis-help">Opposite orders create a possible circular wait.</p>
-          </div></article>
-          <article class="panel span-12" data-reveal><div class="core">
-            <div class="panel-head">
-              <div><div class="overline">Scoring engine</div><h2>Configurable threat weights</h2></div>
-              <button id="save-weights-btn" class="button button-ghost magnetic" type="button"><span class="btn-label">Apply weights</span><span class="btn-orb" aria-hidden="true">↗</span></button>
+        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Trial analysis · 02</div><h1 id="analysis-title" class="split">Why the score <em>warned.</em></h1><p data-reveal>Inspect any run step by step: when the risk score crossed the threshold, how early that was before the deadlock, and which factors drove it. Change the weights and the whole run is re-scored instantly.</p></div>
+
+        <div class="panel an-toolbar" data-reveal><div class="core">
+          <div class="an-source"><span class="overline">Analysing</span><strong id="an-run-label">Vulnerable · demo data</strong><small id="an-run-detail">Built-in demonstration generated in the browser.</small></div>
+          <div class="an-actions">
+            <div class="an-seg" role="group" aria-label="Run to analyse">
+              <button class="an-seg-btn is-selected" type="button" data-an-mode="vulnerable" aria-pressed="true">Vulnerable</button>
+              <button class="an-seg-btn" type="button" data-an-mode="protected" aria-pressed="false">Protected</button>
             </div>
-            <div class="formula-box"><code>ThreatScore = round(w_b·B_norm + w_w·W_norm + w_c·C_norm + w_r·R_norm)</code></div>
-            <div class="weights-grid">
-              <div class="weight-control"><label>w_b · Blocked threads <span id="val-wb">0.35</span></label><input type="range" id="input-wb" min="0" max="1" step="0.05" value="0.35"></div>
-              <div class="weight-control"><label>w_w · Wait duration <span id="val-ww">0.30</span></label><input type="range" id="input-ww" min="0" max="1" step="0.05" value="0.30"></div>
-              <div class="weight-control"><label>w_c · Contention events <span id="val-wc">0.20</span></label><input type="range" id="input-wc" min="0" max="1" step="0.05" value="0.20"></div>
-              <div class="weight-control"><label>w_r · Lock conflict index <span id="val-wr">0.15</span></label><input type="range" id="input-wr" min="0" max="1" step="0.05" value="0.15"></div>
-              <div class="weight-control"><label>Early warning threshold <span id="val-th">70</span></label><input type="range" id="input-th" min="40" max="95" step="1" value="70"></div>
+            <button id="an-run-live" class="chip-btn" type="button">⚡ Run fresh backend trial</button>
+          </div>
+        </div></div>
+
+        <div class="an-findings" aria-label="Key findings">
+          <div class="an-finding"><span>PEAK RISK SCORE</span><strong id="an-f-peak">—</strong><small id="an-f-peak-note"></small></div>
+          <div class="an-finding"><span>FIRST WARNING</span><strong id="an-f-warn">—</strong><small id="an-f-warn-note"></small></div>
+          <div class="an-finding"><span>DEADLOCK CONFIRMED</span><strong id="an-f-dead">—</strong><small id="an-f-dead-note"></small></div>
+          <div class="an-finding is-key"><span>WARNING LEAD TIME</span><strong id="an-f-lead">—</strong><small id="an-f-lead-note"></small></div>
+          <div class="an-finding"><span>LONGEST WAIT</span><strong id="an-f-wait">—</strong><small id="an-f-wait-note"></small></div>
+          <div class="an-finding"><span>CONTENTION EVENTS</span><strong id="an-f-cont">—</strong><small id="an-f-cont-note"></small></div>
+        </div>
+
+        <article class="panel an-chart-card"><div class="core">
+          <div class="panel-head"><div><div class="overline">Risk score over the run</div><h2>When did the warning fire?</h2></div><span id="an-verdict" class="outline-badge">—</span></div>
+          <p class="mt-card-help">Each point is one recorded event. Solid line: the score from the formula with your weights below. Dashed grey line: the score recorded during the run. Click a point, or use the slider, to see why the score is what it is.</p>
+          <div class="an-chart-wrap">
+            <svg id="an-chart" viewBox="0 0 720 280" role="img" aria-label="Risk score for each event of the run"></svg>
+            <div id="an-tip" class="an-tip" hidden></div>
+          </div>
+          <label class="an-step-control">Event <input id="an-step" type="range" min="0" max="0" value="0" aria-label="Selected event"> <span id="an-step-label">1 / 1</span></label>
+          <div class="multi-graph-legend"><span class="is-formula">Formula score (your weights)</span><span class="is-recorded">Recorded score</span><span class="is-warn">First warning</span><span class="is-cycle">Deadlock confirmed</span></div>
+        </div></article>
+
+        <div class="an-grid">
+          <article class="panel"><div class="core">
+            <div class="overline">Score breakdown at the selected event</div>
+            <h2 id="an-b-title" class="an-b-title">—</h2>
+            <p id="an-b-state" class="mt-card-help"></p>
+            <div class="an-b-score"><strong id="an-b-score">0</strong><span id="an-b-level" class="outline-badge">LOW</span></div>
+            <div id="an-b-rows" class="an-b-rows"></div>
+            <p id="an-b-rule" class="an-b-rule"></p>
+          </div></article>
+
+          <article class="panel"><div class="core">
+            <div class="panel-head"><div><div class="overline">Scoring engine</div><h2>Tune the weights</h2></div></div>
+            <div class="formula-box"><code>Score = w_b·Blocked + w_w·Wait + w_c·Contention + w_r·Conflict</code></div>
+            <div class="weights-grid an-weights">
+              <div class="weight-control"><label><i class="an-key k1"></i>w_b · Blocked threads <span id="val-wb">0.35</span></label><input type="range" id="input-wb" min="0" max="1" step="0.05" value="0.35"></div>
+              <div class="weight-control"><label><i class="an-key k2"></i>w_w · Wait duration <span id="val-ww">0.30</span></label><input type="range" id="input-ww" min="0" max="1" step="0.05" value="0.30"></div>
+              <div class="weight-control"><label><i class="an-key k3"></i>w_c · Contention events <span id="val-wc">0.20</span></label><input type="range" id="input-wc" min="0" max="1" step="0.05" value="0.20"></div>
+              <div class="weight-control"><label><i class="an-key k4"></i>w_r · Lock conflict <span id="val-wr">0.15</span></label><input type="range" id="input-wr" min="0" max="1" step="0.05" value="0.15"></div>
+              <div class="weight-control"><label>Warning threshold <span id="val-th">70</span></label><input type="range" id="input-th" min="40" max="95" step="1" value="70"></div>
             </div>
-            <p class="analysis-help">Weights must sum to 1.00. Early warning triggers when score ≥ threshold before a cycle forms.</p>
+            <p id="an-sum" class="an-sum">Weights total 1.00 ✓</p>
+            <div class="an-tuner-actions">
+              <button id="an-normalize" class="chip-btn" type="button">Make total 1.00</button>
+              <button id="an-reset" class="chip-btn" type="button">Reset defaults</button>
+              <button id="save-weights-btn" class="chip-btn" type="button">Save as backend default</button>
+            </div>
+            <p class="analysis-help">The chart and findings update as you drag. "Save as backend default" makes new backend trials use these weights.</p>
           </div></article>
         </div>
+
+        <article class="panel"><div class="core">
+          <div class="panel-head"><div><div class="overline">Event log</div><h2>Every recorded step</h2></div>
+            <button id="export-button" class="chip-btn" type="button">↓ Export CSV</button></div>
+          <div class="an-table-wrap">
+            <table class="an-table">
+              <thead><tr><th>#</th><th>Time</th><th>Event</th><th>Blocked</th><th>Longest wait</th><th>Contention</th><th>Score</th></tr></thead>
+              <tbody id="an-rows"></tbody>
+            </table>
+          </div>
+        </div></article>
       </section>
 
       <!-- ============ COMPARE ============ -->
       <section id="view-compare" class="view" aria-labelledby="compare-title">
-        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Experiment results · 03</div><h1 id="compare-title" class="split">One scenario. <em>Two outcomes.</em></h1><p data-reveal>Compare the deliberately vulnerable schedule against consistent lock ordering.</p></div>
+        <div class="subpage-head"><div class="eyebrow" data-reveal><span class="eyebrow-dot"></span>Experiment results · 03</div><h1 id="compare-title" class="split">One scenario. <em>Two outcomes.</em></h1><p data-reveal>Evidence that lock ordering prevents deadlock: one run of each mode side by side, repeated trials for rates, and a scaling test from 2 to 32 threads.</p></div>
+
         <div class="compare-toolbar panel" data-reveal><div class="core">
-          <div><strong>Side-by-side comparison</strong><span>Complete both modes, or run real repeated trials on the backend.</span></div>
+          <div><strong>1 · Single runs side by side</strong><span id="cmp-source-note">Showing built-in demonstration runs.</span></div>
           <div class="toolbar-actions">
-            <button id="batch-compare-button" class="chip-btn" type="button" title="Run 5 real OS multithreaded trials per mode via /api/analysis/compare">⚡ Run Batch Trials (5 Each)</button>
-            <button id="compare-run-button" class="button button-primary magnetic" type="button"><span class="btn-label">Compare runs</span><span class="btn-orb" aria-hidden="true">↗</span></button>
+            <button id="cmp-run-both" class="button button-primary magnetic" type="button"><span class="btn-label">⚡ Run both modes on backend</span><span class="btn-orb" aria-hidden="true">↗</span></button>
           </div>
         </div></div>
-        <div id="compare-empty" class="compare-empty panel"><div class="core"><div class="empty-symbol"><i></i><i></i></div><h2>Ready to compare</h2><p>Complete one run in each mode, or run batch trials. Results will appear here.</p></div></div>
-        <div id="compare-results" class="compare-results" hidden>
+
+        <div id="compare-results" class="compare-results">
           <div class="compare-columns">
             <article id="compare-v-card" class="panel compare-mode danger-mode"><div class="core spot">
               <div class="compare-mode-top"><span class="compare-symbol">×</span><span>MODE 01 / VULNERABLE · <span id="compare-v-source">DEMO</span></span></div>
@@ -356,22 +395,67 @@
               <div class="compare-mini"><span>Run duration</span><strong id="compare-p-duration">1200 ms</strong></div>
             </div></article>
           </div>
-          <div class="compare-insight panel"><div class="core"><span class="overline">The observation</span><p id="compare-insight-text">The two runs use the same resource pair. Review the measurements above.</p>
-            <button id="export-button" class="button button-ghost magnetic" type="button"><span class="btn-label">Export events as CSV</span><span class="btn-orb" aria-hidden="true">↓</span></button></div></div>
+          <article class="panel"><div class="core">
+            <div class="overline">Risk score, both modes</div>
+            <p class="mt-card-help">Same scale, same threshold. The vulnerable run climbs past the warning line and ends in a deadlock; the protected run stays lower and finishes.</p>
+            <div class="an-chart-wrap">
+              <svg id="cmp-chart" viewBox="0 0 720 260" role="img" aria-label="Risk score of the vulnerable and protected runs"></svg>
+              <div id="cmp-tip" class="an-tip" hidden></div>
+            </div>
+            <div class="multi-graph-legend"><span class="is-vuln">Vulnerable</span><span class="is-prot">Protected</span><span class="is-threshold">Warning threshold</span></div>
+            <p id="compare-insight-text" class="cmp-insight"></p>
+          </div></article>
         </div>
 
+        <div class="compare-toolbar panel cmp-section-bar"><div class="core">
+          <div><strong>2 · Repeated trials</strong><span>Run the 2-thread experiment many times in each mode and measure how often it deadlocks.</span></div>
+          <div class="toolbar-actions">
+            <label class="mt-speed">Trials per mode
+              <select id="batch-count" aria-label="Trials per mode"><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select>
+            </label>
+            <button id="batch-compare-button" class="chip-btn" type="button">⚡ Run repeated trials</button>
+          </div>
+        </div></div>
         <div id="batch-comparison-section" class="panel batch-panel" hidden><div class="core">
           <div class="panel-head">
-            <div><div class="overline">Statistical evaluation</div><h2 id="batch-table-title">Empirical multi-trial comparison</h2></div>
-            <span id="batch-badge" class="outline-badge is-safe">5 TRIALS PER MODE</span>
+            <div><div class="overline">Measured on real threads</div><h2 id="batch-table-title">Deadlock rate by mode</h2></div>
+            <button id="batch-export" class="chip-btn" type="button">↓ Export CSV</button>
           </div>
+          <div id="batch-rates" class="cmp-rates"></div>
           <div class="table-wrap">
             <table class="batch-table">
-              <thead><tr><th>Experiment Mode</th><th>Trials</th><th>Deadlock Rate</th><th>Completion Rate</th><th>Mean Warning Lead</th><th>Detection Latency</th><th>Mean Peak Wait</th><th>Mean Run Duration</th></tr></thead>
+              <thead><tr><th>Mode</th><th>Trials</th><th>Deadlocked</th><th>Completed</th><th>Mean warning lead</th><th>Mean peak wait</th><th>Mean run time</th></tr></thead>
               <tbody id="batch-table-tbody"></tbody>
             </table>
           </div>
-          <div class="batch-stat-card"><h3>Scientific observation &amp; Coffman invariant</h3><p id="batch-insight-desc">Measured results appear here after the batch finishes.</p></div>
+          <div class="batch-stat-card"><h3>What this shows</h3><p id="batch-insight-desc">Measured results appear here after the trials finish.</p></div>
+        </div></div>
+
+        <div class="compare-toolbar panel cmp-section-bar"><div class="core">
+          <div><strong>3 · Scaling test</strong><span>Run the N-thread ring in both modes for several thread counts.</span></div>
+          <div class="toolbar-actions">
+            <div id="scale-counts" class="cmp-counts" role="group" aria-label="Thread counts to test"></div>
+            <button id="scale-run" class="chip-btn" type="button">⚡ Run scaling test</button>
+          </div>
+        </div></div>
+        <div id="scale-section" class="panel" hidden><div class="core">
+          <div class="panel-head">
+            <div><div class="overline">N-thread ring · real threads</div><h2>How the deadlock scales</h2></div>
+            <button id="scale-export" class="chip-btn" type="button">↓ Export CSV</button>
+          </div>
+          <p id="scale-progress" class="mt-card-help"></p>
+          <div class="an-chart-wrap">
+            <svg id="scale-chart" viewBox="0 0 720 260" role="img" aria-label="Run time by thread count for both modes"></svg>
+            <div id="scale-tip" class="an-tip" hidden></div>
+          </div>
+          <div class="multi-graph-legend"><span class="is-vuln">Vulnerable (deadlock, then recovery)</span><span class="is-prot">Protected</span></div>
+          <div class="table-wrap">
+            <table class="batch-table">
+              <thead><tr><th>Threads</th><th>Vulnerable: cycle length</th><th>Detected after</th><th>Finished / aborted</th><th>Run time</th><th>Protected: finished</th><th>Peak queued</th><th>Run time</th></tr></thead>
+              <tbody id="scale-rows"></tbody>
+            </table>
+          </div>
+          <div class="batch-stat-card"><h3>What this shows</h3><p id="scale-insight">Results appear here after the test.</p></div>
         </div></div>
       </section>
 
