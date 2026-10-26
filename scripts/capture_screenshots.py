@@ -19,7 +19,11 @@ OUT = Path(__file__).resolve().parent.parent / "docs" / "submission" / "screens"
 def shot(page, selector, name):
     """Screenshot one element with the floating navigation bar hidden."""
     page.evaluate("document.querySelector('header.island').style.visibility = 'hidden'")
-    page.locator(selector).first.screenshot(path=str(OUT / name))
+    target = page.locator(selector).first
+    # Panels fade in when scrolled into view; give the reveal time to finish.
+    target.scroll_into_view_if_needed()
+    page.wait_for_timeout(1200)
+    target.screenshot(path=str(OUT / name))
     page.evaluate("document.querySelector('header.island').style.visibility = ''")
 
 
@@ -61,6 +65,42 @@ def main() -> None:
         page.locator("#scale-run").click()
         page.wait_for_function("document.getElementById('scale-progress').textContent.startsWith('Finished')")
         shot(page, "#scale-section", "compare-scaling.png")
+
+        # Compare: one live run of each mode, then repeated two-thread trials.
+        page.locator("#cmp-run-both").click()
+        page.wait_for_function("document.getElementById('compare-v-source').textContent === 'LIVE' && !document.getElementById('cmp-run-both').disabled")
+        shot(page, "#compare-results", "compare-modes.png")
+        page.locator("#batch-count").select_option("5")
+        page.locator("#batch-compare-button").click()
+        page.wait_for_function("!document.getElementById('batch-comparison-section').hidden && !document.getElementById('batch-compare-button').disabled")
+        shot(page, "#batch-comparison-section", "compare-batch.png")
+
+        # Analysis: factor breakdown and weight tuner for the live vulnerable trial.
+        page.locator(".nav-item", has_text="Analysis").click()
+        page.wait_for_selector("#view-analysis.is-visible")
+        shot(page, ".an-grid", "analysis-breakdown.png")
+
+        # Lab: live two-thread vulnerable trial played to the end.
+        page.locator(".nav-item", has_text="Lab").click()
+        page.wait_for_selector("#view-lab.is-visible")
+        page.locator("[data-mode=vulnerable]").first.click()
+        page.locator("#live-run-button").click()
+        page.wait_for_function("document.getElementById('data-source-label').textContent.includes('Backend trial')")
+        for _ in range(40):
+            if page.locator("#step-button").is_disabled():
+                break
+            page.locator("#step-button").click()
+        shot(page, "article:has(#graph-state-badge)", "lab-wait-for-graph.png")
+        shot(page, "article:has(#chart-line)", "lab-risk-chart.png")
+
+        # Protected 12-thread ring at its busiest moment: threads queue, no cycle.
+        page.locator("[data-mode=protected]").first.click()
+        page.locator("#multi-thread-count").fill("12")
+        page.locator("#multi-thread-count").dispatch_event("change")
+        page.locator("#multi-thread-run-button").click()
+        page.wait_for_function("document.getElementById('multi-thread-status').textContent === 'COMPLETED'")
+        page.locator("#mt-jump").click()
+        shot(page, "#multi-thread-results .mt-card", "replay-protected.png")
         browser.close()
     print("Saved screenshots to", OUT)
 
